@@ -1,6 +1,7 @@
 'use client';
-import { useState, useEffect, lazy, Suspense } from 'react';
+import { useState, useEffect, useMemo, lazy, Suspense } from 'react';
 import Link from 'next/link';
+import { buildDistricts, buildPortals, directoryOf } from '@/lib/world-layout';
 import {
   ArrowUpRight,
   Box,
@@ -30,6 +31,7 @@ export type RepoFile = {
   code: string;
   lines: number;
   todos: number;
+  loaded?: boolean;
 };
 const sample = (name: string) =>
   `import { createContext, useContext, useState } from 'react';\n\n/**\n * ${name} — Repowalk sample repository\n * A small space for thoughtful software.\n */\nexport interface ExplorerState {\n  currentRoom: string | null;\n  discovered: Set<string>;\n  isExploring: boolean;\n}\n\nexport function useExplorer() {\n  const [state, setState] = useState<ExplorerState>({\n    currentRoom: null,\n    discovered: new Set(),\n    isExploring: true,\n  });\n\n  function enterRoom(path: string) {\n    setState(previous => ({\n      ...previous,\n      currentRoom: path,\n      discovered: new Set([...previous.discovered, path]),\n    }));\n  }\n\n  // TODO: persist discovery between expeditions\n  return { ...state, enterRoom };\n}\n`;
@@ -58,6 +60,10 @@ export default function Home() {
     [repo, setRepo] = useState('repowalk / playground'),
     [branch, setBranch] = useState('main'),
     [folder, setFolder] = useState('src/components'),
+    [inside, setInside] = useState(false),
+    [sourceError, setSourceError] = useState(''),
+    [sourceAttempt, setSourceAttempt] = useState(0),
+    [notice, setNotice] = useState(''),
     [active, setActive] = useState<RepoFile | null>(null),
     [visited, setVisited] = useState<string[]>([]),
     [modal, setModal] = useState(false),
@@ -70,14 +76,60 @@ export default function Home() {
     [reset, setReset] = useState(0),
     [near, setNear] = useState(''),
     [reading, setReading] = useState(false);
-  const folders = Array.from(
-    new Set(
-      files.map((f) => f.path.split('/').slice(0, -1).join('/') || 'root'),
-    ),
-  );
-  const roomFiles = files.filter(
-    (f) => (f.path.split('/').slice(0, -1).join('/') || 'root') === folder,
-  );
+  const districts = useMemo(() => buildDistricts(files), [files]);
+  const folders = districts.map((d) => d.path);
+  const roomFiles = files.filter((f) => directoryOf(f.path) === folder);
+  const portals = buildPortals(files, districts, folder);
+  const mapItems = inside
+    ? portals
+    : districts.map((d) => ({ path: d.path, kind: 'folder' as const }));
+  const activePath = active?.path;
+  const needsSource = !!active && active.loaded === false;
+  useEffect(() => {
+    if (!activePath || !needsSource) return;
+    const controller = new AbortController();
+    void fetch('/api/source', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        repo: repo.replaceAll(' ', ''),
+        branch,
+        path: activePath,
+      }),
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        const data = (await response.json()) as RepoFile & { error?: string };
+        if (!response.ok)
+          throw new Error(data.error || 'Could not load this source file');
+        if (controller.signal.aborted) return;
+        const loaded = { ...data, loaded: true };
+        setFiles((previous) =>
+          previous.map((f) => (f.path === activePath ? loaded : f)),
+        );
+        setActive((current) =>
+          current?.path === activePath ? loaded : current,
+        );
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted)
+          setSourceError((error as Error).message);
+      });
+    return () => controller.abort();
+  }, [activePath, needsSource, repo, branch, sourceAttempt]);
+  function enterFolder(path: string) {
+    setFolder(path);
+    setInside(true);
+    setActive(null);
+    setReading(false);
+    setSourceError('');
+  }
+  function leave() {
+    setReading(false);
+    setSourceError('');
+    if (active) setActive(null);
+    else setInside(false);
+  }
   useEffect(() => {
     const context = (
       document as Document & {
@@ -106,7 +158,8 @@ export default function Home() {
             const file = files.find((f) => f.path === path);
             if (!file)
               throw new Error('File not found in the current repository');
-            setFolder(file.path.split('/').slice(0, -1).join('/') || 'root');
+            setFolder(directoryOf(file.path));
+            setInside(true);
             setActive(file);
             setVisited((v) => (v.includes(file.path) ? v : [...v, file.path]));
             setReading(true);
@@ -121,6 +174,9 @@ export default function Home() {
     return () => lifecycle.abort();
   }, [files]);
   function enter(file: RepoFile) {
+    setInside(true);
+    setFolder(directoryOf(file.path));
+    setSourceError('');
     setActive(file);
     setVisited((v) => (v.includes(file.path) ? v : [...v, file.path]));
     setReading(false);
@@ -139,13 +195,20 @@ export default function Home() {
         files: RepoFile[];
         repo: string;
         branch: string;
+        sampled?: boolean;
       };
       if (!response.ok)
         throw new Error(data.error || 'Repository could not be loaded');
+      setInside(false);
+      setNotice(
+        data.sampled
+          ? 'Large repository: showing the first 5,000 supported files.'
+          : '',
+      );
       setFiles(data.files);
       setRepo(data.repo);
       setBranch(data.branch);
-      setFolder(data.files[0].path.split('/').slice(0, -1).join('/') || 'root');
+      setFolder(directoryOf(data.files[0].path));
       setActive(null);
       setVisited([]);
       setReset((r) => r + 1);
@@ -194,20 +257,23 @@ export default function Home() {
             REPOSITORY <span>{files.length} files</span>
           </div>
           <div className="tree">
-            <div className="tree-root">
+            <button
+              className="tree-root"
+              onClick={() => {
+                setInside(false);
+                setActive(null);
+                setReading(false);
+              }}
+            >
               <ChevronRight size={13} />
               <Box size={15} />
               {repo.split('/').pop()?.trim()}
-            </div>
+            </button>
             {folders.map((f) => (
               <div key={f}>
                 <button
                   className={'folder ' + (folder === f ? 'selected' : '')}
-                  onClick={() => {
-                    setFolder(f);
-                    setActive(null);
-                    setReset((r) => r + 1);
-                  }}
+                  onClick={() => enterFolder(f)}
                 >
                   <ChevronRight
                     size={13}
@@ -215,15 +281,7 @@ export default function Home() {
                   />
                   <Folder size={16} />
                   <span>{f}</span>
-                  <small>
-                    {
-                      files.filter(
-                        (x) =>
-                          (x.path.split('/').slice(0, -1).join('/') ||
-                            'root') === f,
-                      ).length
-                    }
-                  </small>
+                  <small>{districts.find((d) => d.path === f)?.count}</small>
                 </button>
                 {folder === f &&
                   roomFiles.map((file) => (
@@ -273,14 +331,13 @@ export default function Home() {
               }
             >
               <World
-                files={roomFiles}
+                files={files}
+                inside={inside}
+                onFolderEnter={enterFolder}
                 folder={folder}
                 active={active}
                 onEnter={enter}
-                onLeave={() => {
-                  setActive(null);
-                  setReading(false);
-                }}
+                onLeave={leave}
                 onNear={setNear}
                 reset={reset}
                 paused={modal || help || reading}
@@ -294,15 +351,22 @@ export default function Home() {
               <span className="live-dot" /> EXPLORATION MODE
             </div>
             <h2>
-              {active ? active.path.split('/').pop() : 'The source district'}
+              {active
+                ? active.path.split('/').pop()
+                : inside
+                  ? folder + ' /'
+                  : 'The repository district'}
               <span>
                 {' '}
-                / {String(folders.indexOf(folder) + 1).padStart(2, '0')}
+                /{' '}
+                {inside
+                  ? String(folders.indexOf(folder) + 1).padStart(2, '0')
+                  : `${folders.length} buildings`}
               </span>
             </h2>
             <div className="breadcrumb">
               {repo.split('/').pop()?.trim()} <ChevronRight size={12} />{' '}
-              {folder}{' '}
+              {inside ? folder : 'Street level'}{' '}
               {active && (
                 <>
                   <ChevronRight size={12} />
@@ -341,16 +405,37 @@ export default function Home() {
               <Maximize2 size={17} />
             </button>
           </div>
+          {(inside || notice) && (
+            <button
+              className="back-to-street"
+              onClick={() => {
+                setInside(false);
+                setActive(null);
+                setReading(false);
+              }}
+            >
+              <ArrowLeft size={14} />
+              {inside ? 'Back to street' : notice}
+            </button>
+          )}
           <div className="location-tag">
             <span className="location-number">
               {String(folders.indexOf(folder) + 1).padStart(2, '0')}
             </span>
             <div>
               <span className="eyebrow">
-                {active ? 'FILE ROOM' : 'FOLDER BLOCK'}
+                {active
+                  ? 'FILE ROOM'
+                  : inside
+                    ? 'FOLDER INTERIOR'
+                    : 'REPOSITORY STREET'}
               </span>
               <strong>
-                {active ? active.path.split('/').pop() : folder + '/ '}
+                {active
+                  ? active.path.split('/').pop()
+                  : inside
+                    ? `${roomFiles.length} rooms · ${portals.length - roomFiles.length} wings`
+                    : `${folders.length} folder buildings`}
               </strong>
             </div>
             <span className="location-line" />
@@ -363,20 +448,33 @@ export default function Home() {
               <div>
                 <strong>You’re inside {active.path.split('/').pop()}</strong>
                 <p>
-                  {active.lines} lines of code · Explore the room or open its
-                  source.
+                  {sourceError ||
+                    (needsSource
+                      ? 'Loading source from GitHub…'
+                      : `${active.lines} lines of code · Explore the room or open its source.`)}
                 </p>
               </div>
-              <button className="primary" onClick={() => setReading(true)}>
-                Read code <ChevronRight size={16} />
+              <button
+                className="primary"
+                disabled={needsSource && !sourceError}
+                onClick={() => {
+                  if (sourceError) {
+                    setSourceError('');
+                    setSourceAttempt((n) => n + 1);
+                  } else setReading(true);
+                }}
+              >
+                {sourceError
+                  ? 'Retry source'
+                  : needsSource
+                    ? 'Loading…'
+                    : 'Read code'}{' '}
+                <ChevronRight size={16} />
               </button>
               <button
                 className="icon-btn"
                 aria-label="Leave room"
-                onClick={() => {
-                  setActive(null);
-                  setReading(false);
-                }}
+                onClick={leave}
               >
                 <ArrowLeft size={17} />
               </button>
@@ -391,7 +489,12 @@ export default function Home() {
                   </>
                 ) : (
                   <>
-                    Walk to a glowing door to <strong>explore a file</strong>
+                    Walk to a glowing door to{' '}
+                    <strong>
+                      {inside
+                        ? 'explore a file room'
+                        : 'enter a folder building'}
+                    </strong>
                   </>
                 )}
               </span>
@@ -400,12 +503,12 @@ export default function Home() {
           <div className={'minimap ' + (map ? 'expanded' : '')}>
             <button className="minimap-heading" onClick={() => setMap(!map)}>
               <span>
-                <Map size={13} /> DISTRICT MAP
+                <Map size={13} /> {inside ? 'FLOOR PLAN' : 'FOLDER BUILDINGS'}
               </span>
               <span>{map ? '−' : '+'}</span>
             </button>
             <div className="map-grid">
-              {roomFiles.map((f, i) => (
+              {mapItems.map((f, i) => (
                 <button
                   aria-label={'Enter ' + f.path}
                   key={f.path}
@@ -414,7 +517,11 @@ export default function Home() {
                     (visited.includes(f.path) ? 'seen' : '') +
                     (active?.path === f.path ? ' here' : '')
                   }
-                  onClick={() => enter(f)}
+                  onClick={() =>
+                    f.kind === 'folder'
+                      ? enterFolder(f.path)
+                      : enter(files.find((file) => file.path === f.path)!)
+                  }
                   style={{
                     left: `${i % 2 ? 59 : 13}%`,
                     top: `${15 + Math.floor(i / 2) * 24}%`,
@@ -564,8 +671,8 @@ export default function Home() {
               />
             </div>
             <p className="dialog-note">
-              Loads up to 80 source files from the default branch. Large
-              repositories are sampled. Private repositories aren’t supported.
+              Maps up to 5,000 source files from the default branch. Code loads
+              when you enter a room. Private repositories aren’t supported.
             </p>
             {error && (
               <p className="error" role="alert">
@@ -591,12 +698,13 @@ export default function Home() {
             </p>
             <p>Drag the scene to orbit your camera. Scroll to zoom.</p>
             <p>
-              <kbd>E</kbd> opens a nearby door. Walk inside, then choose Read
-              code.
+              <kbd>E</kbd> enters a folder building. Its hallway contains
+              file-room doors and subfolder wings. Enter a file room, then
+              choose Read code.
             </p>
             <p>
-              Choose a folder in the explorer to travel to its block. Select a
-              file or a map room to enter directly.
+              Enter a folder building from the street or use the explorer
+              shortcut. Select a file or a map room to enter directly.
             </p>
             <p>
               <kbd>Esc</kbd> leaves a room. Discovered rooms glow green on the

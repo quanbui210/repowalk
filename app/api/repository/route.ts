@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 type TreeEntry = { path: string; type: string; size?: number };
 const cache = new Map<string, { time: number; data: unknown }>();
 const source =
-  /\.(tsx?|jsx?|mjs|cjs|py|rs|go|java|swift|kt|rb|php|vue|svelte|css|scss|html|json|md|ya?ml|sh|sql)$/i;
+  /(?:\.(tsx?|jsx?|mjs|cjs|py|rs|go|java|swift|kt|rb|php|vue|svelte|css|scss|html|json|md|ya?ml|sh|sql|txt|toml|xml|c|h|cpp|hpp)|(?:^|\/)(README|LICENSE|Dockerfile|Makefile))$/i;
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as { url?: unknown };
@@ -60,18 +60,15 @@ export async function POST(request: Request) {
       tree: TreeEntry[];
       truncated: boolean;
     };
-    const selected = tree.tree
-      .filter(
-        (f) =>
-          f.type === 'blob' &&
-          source.test(f.path) &&
-          (f.size ?? 0) < 100000 &&
-          !/(^|\/)(node_modules|vendor|dist|build|\.git|\.next)\//.test(
-            f.path,
-          ) &&
-          !/(lock\.json|lock\.yaml|\.min\.)/.test(f.path),
-      )
-      .slice(0, 80);
+    const eligible = tree.tree.filter(
+      (f) =>
+        f.type === 'blob' &&
+        source.test(f.path) &&
+        (f.size ?? 0) < 250000 &&
+        !/(^|\/)(node_modules|vendor|dist|build|\.git|\.next)\//.test(f.path) &&
+        !/(lock\.json|lock\.yaml|\.min\.)/.test(f.path),
+    );
+    const selected = eligible.slice(0, 5000);
     if (!selected.length)
       return NextResponse.json(
         {
@@ -80,37 +77,18 @@ export async function POST(request: Request) {
         },
         { status: 422 },
       );
-    const files: Array<{
-      path: string;
-      code: string;
-      lines: number;
-      todos: number;
-    }> = [];
-    for (let i = 0; i < selected.length; i += 8) {
-      const batch = await Promise.all(
-        selected.slice(i, i + 8).map(async (f) => {
-          const url = `https://raw.githubusercontent.com/${owner}/${name}/${encodeURIComponent(meta.default_branch)}/${f.path.split('/').map(encodeURIComponent).join('/')}`;
-          const response = await fetch(url, {
-            signal: AbortSignal.timeout(15000),
-          });
-          if (!response.ok)
-            throw new Error(`Could not load ${f.path}. Please try again.`);
-          const code = await response.text();
-          return {
-            path: f.path,
-            code,
-            lines: code.split('\n').length,
-            todos: (code.match(/\b(TODO|FIXME)\b/g) || []).length,
-          };
-        }),
-      );
-      files.push(...batch);
-    }
+    const files = selected.map((f) => ({
+      path: f.path,
+      code: '',
+      lines: 0,
+      todos: 0,
+      loaded: false,
+    }));
     const data = {
       repo: `${owner} / ${name}`,
       branch: meta.default_branch,
       files,
-      sampled: tree.truncated || selected.length === 80,
+      sampled: tree.truncated || eligible.length > 5000,
     };
     if (cache.size >= 8) cache.delete(cache.keys().next().value!);
     cache.set(key, { time: Date.now(), data });

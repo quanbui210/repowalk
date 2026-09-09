@@ -1146,3 +1146,29 @@ kbd {
     max-width: 140px;
   }
 }
+.back-to-street {
+  position: absolute;
+  left: 33px;
+  top: 131px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  background: #19272de8;
+  border: 1px solid #627a7f66;
+  padding: 9px 12px;
+  border-radius: 5px;
+  color: #c0d0ce;
+  font-size: 11px;
+  backdrop-filter: blur(12px);
+}
+@media (max-width: 760px) {
+  .back-to-street {
+    left: 15px;
+    top: 154px;
+    font-size: 9px;
+    padding: 7px;
+  }
+  .location-tag {
+    display: none;
+  }
+}

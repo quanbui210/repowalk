@@ -3,9 +3,17 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import type { RepoFile } from './page';
+import {
+  buildDistricts,
+  buildPortals,
+  type District,
+  type Portal,
+} from '@/lib/world-layout';
 type Props = {
   files: RepoFile[];
   folder: string;
+  inside: boolean;
+  onFolderEnter: (path: string) => void;
   active: RepoFile | null;
   onEnter: (f: RepoFile) => void;
   onLeave: () => void;
@@ -94,19 +102,17 @@ function Lamp({ x, z }: { x: number; z: number }) {
   );
 }
 function Building({
-  file,
+  district,
   i,
   onEnter,
 }: {
-  file: RepoFile;
+  district: District;
   i: number;
-  onEnter: (f: RepoFile) => void;
+  onEnter: (path: string) => void;
 }) {
-  const x = i % 2 === 0 ? -7 : 7,
-    z = -Math.floor(i / 2) * 11,
-    h = 4.3 + Math.min(file.lines / 150, 3);
+  const { x, z, scale, height: h } = district;
   return (
-    <group position={[x, 0, z]}>
+    <group position={[x, 0, z]} scale={[scale, 1, scale]}>
       <Block p={[0, 0.15, 0]} s={[9, 0.3, 8.8]} c="#526064" />
       <Block
         p={[0, h / 2, -0.6]}
@@ -149,7 +155,7 @@ function Building({
         position={[0, 1.47, 3.2]}
         onClick={(e) => {
           e.stopPropagation();
-          onEnter(file);
+          onEnter(district.path);
         }}
         onPointerOver={() => {
           document.body.style.cursor = 'pointer';
@@ -170,11 +176,33 @@ function Building({
       <Block p={[0, 0.24, 3.57]} s={[2.8, 0.2, 1.1]} c="#77827b" />
       <Block p={[0, 0.08, 4.13]} s={[3.2, 0.16, 0.7]} c="#636f6a" />
       <Label
-        text={file.path.split('/').pop()!}
+        text={district.path + '/'}
         p={[0, 3.61, 3.28]}
         width={5.5}
         size={43}
       />
+      <Label
+        text={`${district.count} FILES · ${district.directCount} ROOMS${district.children.length ? ' + ' + district.children.length + ' WINGS' : ''}`}
+        p={[0, 4.18, 3.28]}
+        width={5.5}
+        size={29}
+      />
+      {Array.from(
+        { length: Math.max(0, Math.floor((h - 4.5) / 1.5)) },
+        (_, floor) => (
+          <group key={'floor' + floor}>
+            {[-2.7, -0.9, 0.9, 2.7].map((wx) => (
+              <Block
+                key={wx}
+                p={[wx, 5 + floor * 1.5, 2.95]}
+                s={[1.1, 0.75, 0.035]}
+                c={i % 2 ? '#a0bdb8' : '#d0ae7b'}
+                glow={0.45}
+              />
+            ))}
+          </group>
+        ),
+      )}
       <Label
         text={String(i + 1).padStart(2, '0')}
         p={[-3.15, 4.04, 3.03]}
@@ -210,7 +238,7 @@ function Interior({ file }: { file: RepoFile }) {
     c.fillStyle = '#101e25';
     c.fillRect(0, 0, 1536, 1024);
     c.font = '25px monospace';
-    file.code
+    (file.loaded === false ? 'Loading source from GitHub…' : file.code)
       .split('\n')
       .slice(0, 32)
       .forEach((line, i) => {
@@ -300,18 +328,170 @@ function Player({ moving }: { moving: React.RefObject<boolean> }) {
     </group>
   );
 }
+function Hallway({
+  portals,
+  folder,
+  onPortal,
+  region,
+}: {
+  portals: Portal[];
+  folder: string;
+  onPortal: (p: Portal) => void;
+  region: number;
+}) {
+  const end = Math.min(-6, ...portals.map((p) => p.z - 4));
+  return (
+    <group>
+      <Block p={[0, -0.15, (end + 9) / 2]} s={[16, 0.3, 9 - end]} c="#455653" />
+      <Block
+        p={[0, 0.02, (end + 9) / 2]}
+        s={[3.2, 0.025, 9 - end]}
+        c="#596762"
+      />
+      <Block p={[-7, 1.7, (end + 9) / 2]} s={[0.3, 3.4, 9 - end]} c="#34464c" />
+      <Block p={[7, 1.7, (end + 9) / 2]} s={[0.3, 3.4, 9 - end]} c="#34464c" />
+      <Block p={[0, 2, end]} s={[14, 4, 0.3]} c="#34464c" />
+      <Label
+        text={folder + ' /  FILE GALLERY'}
+        p={[0, 3.5, end + 0.2]}
+        width={10}
+      />
+      {portals
+        .filter((p) => Math.abs(p.z - region) < 75)
+        .map((portal, i) => (
+          <group
+            key={portal.path}
+            position={[portal.x, 0, portal.z]}
+            rotation={[0, portal.x < 0 ? Math.PI / 2 : -Math.PI / 2, 0]}
+          >
+            <Block p={[0, 1.65, -0.7]} s={[5.1, 3.3, 1.3]} c="#34484f" />
+            <Block p={[0, 1.45, 0.02]} s={[2.1, 2.9, 0.12]} c="#172a32" />
+            <Block
+              p={[-1.08, 1.45, 0.14]}
+              s={[0.065, 2.95, 0.09]}
+              c={portal.kind === 'folder' ? '#a9d7da' : amber}
+              glow={2}
+            />
+            <Block
+              p={[1.08, 1.45, 0.14]}
+              s={[0.065, 2.95, 0.09]}
+              c={portal.kind === 'folder' ? '#a9d7da' : amber}
+              glow={2}
+            />
+            <Block
+              p={[0, 2.93, 0.14]}
+              s={[2.2, 0.065, 0.09]}
+              c={portal.kind === 'folder' ? '#a9d7da' : amber}
+              glow={2}
+            />
+            <mesh
+              position={[0, 1.45, 0.17]}
+              onClick={(e) => {
+                e.stopPropagation();
+                onPortal(portal);
+              }}
+            >
+              <boxGeometry args={[1.95, 2.8, 0.08]} />
+              <meshStandardMaterial
+                color={portal.kind === 'folder' ? '#37545b' : '#2c3f48'}
+              />
+            </mesh>
+            <Block
+              p={[0.72, 1.4, 0.25]}
+              s={[0.06, 0.3, 0.1]}
+              c={amber}
+              glow={1}
+            />
+            <Label
+              text={
+                (portal.kind === 'folder' ? '↳ ' : '') +
+                portal.path.split('/').pop() +
+                (portal.kind === 'folder' ? '/' : '')
+              }
+              p={[0, 3.48, 0.05]}
+              width={4.8}
+              size={40}
+            />
+            <Label
+              text={portal.kind === 'folder' ? 'SUBFOLDER WING' : 'FILE ROOM'}
+              p={[0, 0.5, 0.24]}
+              width={1.6}
+              size={36}
+            />
+            {i % 4 === 0 && (
+              <pointLight
+                position={[0, 2, 1.3]}
+                color={portal.kind === 'folder' ? '#b5dbe4' : amber}
+                intensity={13}
+                distance={8}
+              />
+            )}
+          </group>
+        ))}
+      <group position={[0, 0, 8]} rotation={[0, Math.PI, 0]}>
+        <Label text="EXIT TO STREET · E" p={[0, 1.7, 0]} width={4} />
+        <Block p={[0, 0.04, 0]} s={[4, 0.08, 1]} c="#8fa797" />
+      </group>
+      <pointLight
+        position={[0, 5, 3]}
+        intensity={45}
+        color="#bdcfc7"
+        distance={19}
+      />
+    </group>
+  );
+}
 function Scene(props: Props) {
-  const { files, active, onEnter, onLeave, onNear, reset, paused } = props;
+  const {
+    files,
+    folder,
+    inside,
+    active,
+    onEnter,
+    onFolderEnter,
+    onLeave,
+    onNear,
+    reset,
+    paused,
+  } = props;
+  const districts = useMemo(() => buildDistricts(files), [files]);
+  const portals = useMemo(
+    () => buildPortals(files, districts, folder),
+    [files, districts, folder],
+  );
   const player = useRef<THREE.Group>(null),
     moving = useRef(false),
     keys = useRef(new Set<string>()),
-    angle = useRef(0.36),
-    zoom = useRef(21),
+    angle = useRef(0.28),
+    zoom = useRef(25),
     drag = useRef<number | null>(null),
     lastNear = useRef(''),
-    nearest = useRef<RepoFile | null>(null),
-    { camera, gl } = useThree();
-  const target = useRef(new THREE.Vector3());
+    nearest = useRef<Portal | { kind: 'exit'; path: string } | null>(null),
+    target = useRef(new THREE.Vector3()),
+    positions = useRef(new Map<string, THREE.Vector3>()),
+    previous = useRef('city'),
+    lastReset = useRef(reset);
+  const [region, setRegion] = useState(0);
+  const regionRef = useRef(0);
+  const { camera, gl } = useThree();
+  const activePath = active?.path;
+  const location = activePath
+    ? 'room:' + activePath
+    : inside
+      ? 'hall:' + folder
+      : 'city';
+  const perform = (portal: Portal | { kind: 'exit'; path: string }) => {
+    if (portal.kind === 'exit') {
+      onLeave();
+      return;
+    }
+    if (portal.kind === 'folder') {
+      onFolderEnter(portal.path);
+      return;
+    }
+    const file = files.find((f) => f.path === portal.path);
+    if (file) onEnter(file);
+  };
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
       if ((e.target as HTMLElement)?.closest('input,textarea') || paused)
@@ -332,9 +512,16 @@ function Scene(props: Props) {
       )
         e.preventDefault();
       keys.current.add(k);
-      if (k === 'e' && !e.repeat && !active && nearest.current)
-        onEnter(nearest.current);
-      if (k === 'escape' && active) onLeave();
+      if (k === 'e' && !e.repeat && nearest.current && !activePath) {
+        const portal = nearest.current;
+        if (portal.kind === 'exit') onLeave();
+        else if (portal.kind === 'folder') onFolderEnter(portal.path);
+        else {
+          const file = files.find((f) => f.path === portal.path);
+          if (file) onEnter(file);
+        }
+      }
+      if (k === 'escape' && (activePath || inside)) onLeave();
     };
     const up = (e: KeyboardEvent) => keys.current.delete(e.key.toLowerCase());
     const blur = () => keys.current.clear();
@@ -346,17 +533,29 @@ function Scene(props: Props) {
       window.removeEventListener('keyup', up);
       window.removeEventListener('blur', blur);
     };
-  }, [active, onEnter, onLeave, paused]);
+  }, [activePath, inside, onEnter, onFolderEnter, onLeave, paused, files]);
   useEffect(() => {
     if (player.current) {
-      player.current.position.set(0, 0, active ? 3 : 9);
+      if (lastReset.current !== reset) {
+        positions.current.clear();
+        lastReset.current = reset;
+      } else if (previous.current !== location)
+        positions.current.set(
+          previous.current,
+          player.current.position.clone(),
+        );
+      const saved = positions.current.get(location);
+      player.current.position.copy(
+        saved || new THREE.Vector3(0, 0, activePath ? 3 : inside ? 6 : 12),
+      );
       player.current.rotation.y = Math.PI;
       target.current.copy(player.current.position);
+      previous.current = location;
     }
     keys.current.clear();
     lastNear.current = '';
     onNear('');
-  }, [active, reset, onNear]);
+  }, [location, activePath, inside, onNear, reset]);
   useEffect(() => {
     const el = gl.domElement;
     const down = (e: PointerEvent) => {
@@ -375,8 +574,8 @@ function Scene(props: Props) {
       e.preventDefault();
       zoom.current = THREE.MathUtils.clamp(
         zoom.current + e.deltaY * 0.015,
-        9,
-        37,
+        10,
+        46,
       );
     };
     el.addEventListener('pointerdown', down);
@@ -390,6 +589,8 @@ function Scene(props: Props) {
       el.removeEventListener('wheel', wheel);
     };
   }, [gl]);
+  const cityEnd = (districts.at(-1)?.z || 0) - 15,
+    hallEnd = (portals.at(-1)?.z || 0) - 2;
   useFrame((_, dt) => {
     if (!player.current) return;
     dt = Math.min(dt, 0.04);
@@ -407,7 +608,7 @@ function Scene(props: Props) {
       const length = Math.hypot(dx, dz);
       dx /= length;
       dz /= length;
-      const speed = (keys.current.has('shift') ? 7 : 3.7) * dt;
+      const speed = (keys.current.has('shift') ? 8 : 4.4) * dt;
       const mx =
           (dx * Math.cos(angle.current) + dz * Math.sin(angle.current)) * speed,
         mz =
@@ -416,50 +617,81 @@ function Scene(props: Props) {
       const nx = p.position.x + mx,
         nz = p.position.z + mz;
       const blocked = (x: number, z: number) =>
-        !active &&
-        files.some(
-          (_, i) =>
-            Math.abs(x - (i % 2 ? 7 : -7)) < 4.15 &&
-            z < -Math.floor(i / 2) * 11 + 3.6 &&
-            z > -Math.floor(i / 2) * 11 - 4.4,
+        !inside &&
+        !activePath &&
+        districts.some(
+          (d) =>
+            Math.abs(x - d.x) < 3.8 * d.scale + 0.35 &&
+            z < d.z + 2.85 * d.scale + 0.4 &&
+            z > d.z - 4.05 * d.scale - 0.4,
         );
+      const bound = activePath ? 7.5 : inside ? 3.8 : 35;
       if (!blocked(nx, p.position.z))
-        p.position.x = THREE.MathUtils.clamp(
-          nx,
-          active ? -7.5 : -15,
-          active ? 7.5 : 15,
-        );
+        p.position.x = THREE.MathUtils.clamp(nx, -bound, bound);
       if (!blocked(p.position.x, nz))
         p.position.z = THREE.MathUtils.clamp(
           nz,
-          active ? -7.5 : -Math.ceil(files.length / 2) * 11,
-          active ? 6 : 15,
+          activePath ? -7.5 : inside ? hallEnd : cityEnd,
+          activePath ? 6 : inside ? 8 : 20,
         );
-      p.rotation.y = THREE.MathUtils.lerp(
-        p.rotation.y,
-        Math.atan2(mx, mz),
-        0.2,
-      );
+      const rotation = Math.atan2(mx, mz);
+      p.rotation.y +=
+        Math.atan2(
+          Math.sin(rotation - p.rotation.y),
+          Math.cos(rotation - p.rotation.y),
+        ) *
+        (1 - Math.exp(-12 * dt));
     }
-    let close: RepoFile | null = null;
-    if (!active) {
-      files.forEach((f, i) => {
-        const x = i % 2 ? 7 : -7,
-          z = -Math.floor(i / 2) * 11 + 4.2;
-        if (Math.hypot(p.position.x - x, p.position.z - z) < 3.1) close = f;
-      });
+    let close: Portal | { kind: 'exit'; path: string } | null = null;
+    if (!activePath) {
+      if (inside) {
+        if (p.position.z > 6.8)
+          close = { kind: 'exit', path: 'Back to the street' };
+        else
+          for (const portal of portals) {
+            if (
+              Math.hypot(p.position.x - portal.x, p.position.z - portal.z) < 2.4
+            ) {
+              close = portal;
+              break;
+            }
+          }
+      } else
+        for (const d of districts) {
+          if (
+            Math.hypot(
+              p.position.x - d.x,
+              p.position.z - (d.z + 3.8 * d.scale),
+            ) <
+            3.2 * d.scale
+          ) {
+            close = { kind: 'folder', path: d.path, x: d.x, z: d.z };
+            break;
+          }
+        }
     }
     nearest.current = close;
-    const path = (close as RepoFile | null)?.path.split('/').pop() || '';
-    if (path !== lastNear.current) {
-      lastNear.current = path;
-      onNear(path);
+    const name = close
+      ? close.kind === 'folder'
+        ? close.path + '/'
+        : close.kind === 'exit'
+          ? close.path
+          : close.path.split('/').pop()!
+      : '';
+    if (name !== lastNear.current) {
+      lastNear.current = name;
+      onNear(name);
+    }
+    const nextRegion = Math.round(p.position.z / 30) * 30;
+    if (nextRegion !== regionRef.current) {
+      regionRef.current = nextRegion;
+      setRegion(nextRegion);
     }
     target.current.lerp(
       new THREE.Vector3(p.position.x, p.position.y + 1, p.position.z - 3),
-      1 - Math.exp(-3 * dt),
+      1 - Math.exp(-4 * dt),
     );
-    const dist = active ? zoom.current * 0.65 : zoom.current;
+    const dist = inside || activePath ? zoom.current * 0.59 : zoom.current;
     const desired = new THREE.Vector3(
       target.current.x + Math.sin(angle.current) * dist,
       target.current.y + dist * 0.79,
@@ -468,11 +700,10 @@ function Scene(props: Props) {
     camera.position.lerp(desired, 1 - Math.exp(-4 * dt));
     camera.lookAt(target.current);
   });
-  const rows = Math.max(3, Math.ceil(files.length / 2));
   return (
     <>
       <color attach="background" args={['#19252d']} />
-      <fog attach="fog" args={['#19252d', 28, 88]} />
+      <fog attach="fog" args={['#19252d', 35, 110]} />
       <ambientLight intensity={0.55} color="#a2bdc8" />
       <hemisphereLight args={['#a7c5d1', '#26363d', 1.4]} />
       <directionalLight
@@ -481,87 +712,85 @@ function Scene(props: Props) {
         intensity={2.5}
         castShadow
         shadow-mapSize={[2048, 2048]}
-        shadow-camera-left={-35}
-        shadow-camera-right={35}
-        shadow-camera-top={35}
-        shadow-camera-bottom={-35}
+        shadow-camera-left={-45}
+        shadow-camera-right={45}
+        shadow-camera-top={45}
+        shadow-camera-bottom={-45}
         shadow-bias={-0.0005}
       />
       {active ? (
         <Interior file={active} />
+      ) : inside ? (
+        <Hallway
+          portals={portals}
+          folder={folder}
+          onPortal={perform}
+          region={region}
+        />
       ) : (
         <>
-          <Block p={[0, -0.35, -rows * 4]} s={[150, 0.5, 180]} c="#293b43" />
           <Block
-            p={[0, -0.04, -rows * 4]}
-            s={[5.4, 0.12, rows * 14]}
+            p={[0, -0.35, (cityEnd + 22) / 2]}
+            s={[160, 0.5, 22 - cityEnd]}
+            c="#293b43"
+          />
+          <Block
+            p={[0, -0.04, (cityEnd + 22) / 2]}
+            s={[7, 0.12, 22 - cityEnd]}
             c="#35444a"
           />
-          {Array.from({ length: rows * 7 }, (_, i) => (
+          {Array.from({ length: 70 }, (_, i) => region + 65 - i * 2)
+            .filter((z) => z < 22 && z > cityEnd)
+            .map((z) => (
+              <Block
+                key={z}
+                p={[0, 0.035, z]}
+                s={[0.08, 0.01, 0.7]}
+                c="#919685"
+              />
+            ))}
+          {[-3.5, 3.5].map((x) => (
             <Block
-              key={'stripe' + i}
-              p={[0, 0.035, 12 - i * 2.1]}
-              s={[0.065, 0.01, 0.7]}
-              c="#919685"
+              key={x}
+              p={[x, 0.03, (cityEnd + 22) / 2]}
+              s={[0.15, 0.15, 22 - cityEnd]}
+              c="#77847e"
             />
           ))}
-          {Array.from({ length: rows * 3 }, (_, i) => (
-            <group key={'pave' + i}>
-              <Block
-                p={[-2.7, 0.02, 12 - i * 3.6]}
-                s={[0.13, 0.15, 3.5]}
-                c="#78847e"
+          {districts.map((d, i) =>
+            Math.abs(d.z - region) < 110 ? (
+              <Building
+                key={d.path}
+                district={d}
+                i={i}
+                onEnter={onFolderEnter}
               />
-              <Block
-                p={[2.7, 0.02, 12 - i * 3.6]}
-                s={[0.13, 0.15, 3.5]}
-                c="#78847e"
+            ) : null,
+          )}
+          {districts
+            .filter((d) => Math.abs(d.z - region) < 55)
+            .map((d) => (
+              <Lamp
+                key={d.path}
+                x={d.x > 0 ? 3.8 : -3.8}
+                z={d.z + 5 * d.scale}
               />
-            </group>
-          ))}
-          {files.map((f, i) => (
-            <Building key={f.path} file={f} i={i} onEnter={onEnter} />
-          ))}
-          {Array.from({ length: rows }, (_, i) => (
-            <group key={'lamp' + i}>
-              <Lamp x={-3.1} z={5 - i * 11} />
-              <Lamp x={3.1} z={-2 - i * 11} />
-            </group>
-          ))}
+            ))}
           {Array.from({ length: 14 }, (_, i) => (
             <Block
               key={'skyline' + i}
               p={[
-                (i % 2 ? 1 : -1) * (23 + (i % 3) * 6),
+                (i % 2 ? 1 : -1) * (32 + (i % 3) * 6),
                 3 + (i % 4) * 2,
-                8 - Math.floor(i / 2) * 15,
+                region + 15 - Math.floor(i / 2) * 15,
               ]}
               s={[7, 6 + (i % 4) * 4, 9]}
               c="#2f424b"
             />
           ))}
-          <Label
-            text={
-              props.folder.toUpperCase() +
-              '  /  DISTRICT ' +
-              String(1).padStart(2, '0')
-            }
-            p={[0, 5.5, -rows * 11 + 2]}
-            width={9}
-          />
-          <Block
-            p={[-5, 2.65, -rows * 11 + 2]}
-            s={[0.13, 5.5, 0.15]}
-            c="#627673"
-          />
-          <Block
-            p={[5, 2.65, -rows * 11 + 2]}
-            s={[0.13, 5.5, 0.15]}
-            c="#627673"
-          />
         </>
       )}
-      <group ref={player} position={[0, 0, 9]}>
+      <group ref={player} position={[0, 0, 12]}>
         <Player moving={moving} />
       </group>
     </>
