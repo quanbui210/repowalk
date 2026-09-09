@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { analyzeSource } from '@/lib/analyze-source';
 export async function POST(request: Request) {
   try {
     const { repo, branch, path } = (await request.json()) as {
@@ -64,6 +65,7 @@ export async function POST(request: Request) {
       lines: code.split('\n').length,
       todos: (code.match(/\b(TODO|FIXME)\b/g) || []).length,
       loaded: true,
+      analysis: analyzeSource(code, path),
     });
   } catch (error) {
     return NextResponse.json(

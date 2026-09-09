@@ -1172,3 +1172,275 @@ kbd {
     display: none;
   }
 }
+.elevator-panel {
+  position: absolute;
+  left: 33px;
+  top: 188px;
+  width: 230px;
+  padding: 15px;
+  background: #142328e8;
+  border: 1px solid #7eac9e55;
+  border-radius: 8px;
+  backdrop-filter: blur(14px);
+}
+.elevator-panel > span {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font: 10px var(--font-geist-mono);
+  letter-spacing: 1px;
+  color: #b5d8c9;
+}
+.elevator-panel p {
+  font-size: 11px;
+  color: #829fa5;
+  line-height: 1.6;
+  margin: 10px 0;
+}
+.elevator-panel > div {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+.elevator-panel button {
+  width: 30px;
+  height: 30px;
+  border: 1px solid #779a8d44;
+  border-radius: 4px;
+  color: #a9c0b9;
+  font: 12px var(--font-geist-mono);
+  background: #253935;
+}
+.elevator-panel button.current {
+  background: #d9b08a;
+  color: #263328;
+  border-color: #e5c6aa;
+}
+.game-area:has(.elevator-panel) .location-tag {
+  display: none;
+}
+.symbol-panel {
+  position: absolute;
+  right: 25px;
+  top: 134px;
+  max-height: calc(100% - 355px);
+  overflow: auto;
+  width: 215px;
+  padding: 16px;
+  background: #132029ed;
+  border: 1px solid #77949e55;
+  border-radius: 8px;
+  backdrop-filter: blur(16px);
+}
+.symbol-panel p {
+  font-size: 11px;
+  line-height: 1.7;
+  color: #8da7b0;
+  margin: 10px 0 13px;
+}
+.symbol-panel button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 0;
+  border-top: 1px solid #728b921f;
+  font-size: 11px;
+  color: #bbcfd0;
+  text-align: left;
+}
+.symbol-panel button:hover {
+  color: #dfcbb9;
+}
+.symbol-panel button > span {
+  color: #bca6e6;
+  font-size: 17px;
+}
+.symbol-panel small {
+  margin-left: auto;
+  color: #778f9a;
+  font: 9px var(--font-geist-mono);
+}
+.selected-source {
+  background: #b6a2e518;
+  box-shadow: inset 3px 0 #bdabe4;
+}
+.history-panel {
+  position: absolute;
+  left: 33px;
+  bottom: 93px;
+  width: 390px;
+  padding: 19px;
+  background: #152028ed;
+  border: 1px solid #a194c465;
+  border-radius: 10px;
+  backdrop-filter: blur(18px);
+  box-shadow: 0 16px 70px #0005;
+}
+.history-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: #c5b5e5;
+  font: 10px var(--font-geist-mono);
+  letter-spacing: 1.5px;
+}
+.history-heading > span {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.commit-navigation {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 18px;
+  font-size: 11px;
+  color: #a4b5bc;
+}
+.commit-navigation button {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  border: 1px solid #6c7f8a55;
+  padding: 7px 9px;
+  border-radius: 4px;
+  background: #213039;
+}
+.commit-navigation > span {
+  font: 10px var(--font-geist-mono);
+  color: #b1a0d0;
+}
+.history-panel p {
+  font-size: 13px;
+  line-height: 1.6;
+  color: #c0cfd0;
+  margin: 13px 0;
+}
+.history-panel small {
+  display: block;
+  font-size: 10px;
+  line-height: 1.6;
+  color: #809ca8;
+}
+.commit-message {
+  min-height: 41px;
+}
+.commit-ticks {
+  display: flex;
+  gap: 5px;
+  margin: 16px 0;
+  flex-direction: row-reverse;
+  align-items: center;
+  height: 23px;
+}
+.commit-ticks button {
+  height: 15px;
+  flex: 1;
+  border-radius: 2px;
+  border: 1px solid #9c8ca959;
+  background: #6659746b;
+  transition:
+    height 0.2s,
+    background 0.2s;
+}
+.commit-ticks button:hover,
+.commit-ticks button.selected {
+  height: 24px;
+  background: #c5a9e7;
+  border-color: #e0c3fa;
+}
+.history-legend {
+  display: flex;
+  gap: 14px;
+  font-size: 10px;
+  margin-bottom: 9px;
+}
+.history-legend span:nth-child(1) {
+  color: #92dfb1;
+}
+.history-legend span:nth-child(2) {
+  color: #c0a0f0;
+}
+.history-legend span:nth-child(3) {
+  color: #dc8c8c;
+}
+.game-area:has(.history-panel) .entry-prompt {
+  display: none;
+}
+@media (max-width: 1100px) {
+  .symbol-panel {
+    width: 175px;
+  }
+  .history-panel {
+    width: 330px;
+  }
+  .elevator-panel {
+    width: 200px;
+  }
+}
+@media (max-width: 760px) {
+  .elevator-panel {
+    left: 15px;
+    top: 201px;
+    width: 150px;
+    padding: 10px;
+  }
+  .elevator-panel > span {
+    font-size: 8px;
+  }
+  .elevator-panel p {
+    font-size: 9px;
+  }
+  .elevator-panel button {
+    width: 24px;
+    height: 25px;
+    font-size: 10px;
+  }
+  .symbol-panel {
+    right: 13px;
+    left: 13px;
+    top: 203px;
+    width: auto;
+    max-height: calc(100% - 390px);
+    padding: 12px;
+  }
+  .symbol-panel .eyebrow {
+    font-size: 8px;
+  }
+  .symbol-panel p {
+    font-size: 9px;
+  }
+  .symbol-panel button {
+    font-size: 9px;
+  }
+  .history-panel {
+    left: 13px;
+    right: 13px;
+    width: auto;
+    bottom: 81px;
+    padding: 12px;
+  }
+  .history-panel p {
+    font-size: 11px;
+  }
+  .history-panel small {
+    font-size: 8px;
+  }
+  .commit-navigation {
+    font-size: 9px;
+  }
+  .commit-navigation button {
+    padding: 5px 3px;
+  }
+  .history-legend {
+    gap: 6px;
+    font-size: 8px;
+  }
+  .commit-ticks {
+    gap: 3px;
+  }
+  .game-area:has(.history-panel) .minimap {
+    display: none;
+  }
+}

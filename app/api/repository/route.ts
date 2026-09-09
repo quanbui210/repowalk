@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server';
-type TreeEntry = { path: string; type: string; size?: number };
+type TreeEntry = { path: string; type: string; size?: number; sha: string };
 const cache = new Map<string, { time: number; data: unknown }>();
 const source =
   /(?:\.(tsx?|jsx?|mjs|cjs|py|rs|go|java|swift|kt|rb|php|vue|svelte|css|scss|html|json|md|ya?ml|sh|sql|txt|toml|xml|c|h|cpp|hpp)|(?:^|\/)(README|LICENSE|Dockerfile|Makefile))$/i;
 export async function POST(request: Request) {
   try {
-    const body = (await request.json()) as { url?: unknown };
+    const body = (await request.json()) as { url?: unknown; ref?: unknown };
     if (typeof body.url !== 'string')
       return NextResponse.json(
         { error: 'Enter a public GitHub repository URL.' },
@@ -24,7 +24,7 @@ export async function POST(request: Request) {
       );
     const owner = match[1],
       name = match[2].replace(/\.git$/, ''),
-      key = `${owner}/${name}`;
+      key = `${owner}/${name}@${typeof body.ref === 'string' ? body.ref : 'HEAD'}`;
     const existing = cache.get(key);
     if (existing && Date.now() - existing.time < 300000)
       return NextResponse.json(existing.data);
@@ -50,8 +50,12 @@ export async function POST(request: Request) {
       default_branch: string;
       size: number;
     };
+    const ref =
+      typeof body.ref === 'string' && /^[a-f0-9]{40}$/.test(body.ref)
+        ? body.ref
+        : meta.default_branch;
     const treeResponse = await fetch(
-      `https://api.github.com/repos/${owner}/${name}/git/trees/${encodeURIComponent(meta.default_branch)}?recursive=1`,
+      `https://api.github.com/repos/${owner}/${name}/git/trees/${encodeURIComponent(ref)}?recursive=1`,
       { headers, signal: AbortSignal.timeout(15000) },
     );
     if (!treeResponse.ok)
@@ -83,10 +87,12 @@ export async function POST(request: Request) {
       lines: 0,
       todos: 0,
       loaded: false,
+      sha: f.sha,
     }));
     const data = {
       repo: `${owner} / ${name}`,
       branch: meta.default_branch,
+      ref,
       files,
       sampled: tree.truncated || eligible.length > 5000,
     };

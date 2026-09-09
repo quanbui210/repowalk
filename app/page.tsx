@@ -1,6 +1,15 @@
 'use client';
-import { useState, useEffect, useMemo, lazy, Suspense } from 'react';
+import { useState, useEffect, useMemo, useRef, lazy, Suspense } from 'react';
 import Link from 'next/link';
+import {
+  compareFiles,
+  floorsFor,
+  floorPortals,
+  type CodeConstruct,
+  type SourceAnalysis,
+  type CommitInfo,
+  type ChangeKind,
+} from '@/lib/exploration';
 import { buildDistricts, buildPortals, directoryOf } from '@/lib/world-layout';
 import {
   ArrowUpRight,
@@ -12,6 +21,9 @@ import {
   FileCode2,
   Maximize2,
   RotateCcw,
+  History,
+  ChevronLeft,
+  Building2,
   Volume2,
   VolumeX,
   Map,
@@ -32,6 +44,8 @@ export type RepoFile = {
   lines: number;
   todos: number;
   loaded?: boolean;
+  sha?: string;
+  analysis?: SourceAnalysis;
 };
 const sample = (name: string) =>
   `import { createContext, useContext, useState } from 'react';\n\n/**\n * ${name} — Repowalk sample repository\n * A small space for thoughtful software.\n */\nexport interface ExplorerState {\n  currentRoom: string | null;\n  discovered: Set<string>;\n  isExploring: boolean;\n}\n\nexport function useExplorer() {\n  const [state, setState] = useState<ExplorerState>({\n    currentRoom: null,\n    discovered: new Set(),\n    isExploring: true,\n  });\n\n  function enterRoom(path: string) {\n    setState(previous => ({\n      ...previous,\n      currentRoom: path,\n      discovered: new Set([...previous.discovered, path]),\n    }));\n  }\n\n  // TODO: persist discovery between expeditions\n  return { ...state, enterRoom };\n}\n`;
@@ -49,12 +63,59 @@ const paths = [
   'tests/explorer.test.ts',
   'tests/manifest.test.ts',
 ];
-const demo: RepoFile[] = paths.map((path) => ({
-  path,
-  code: sample(path.split('/').pop()!),
-  lines: 31,
-  todos: 1,
-}));
+const demo: RepoFile[] = paths.map((path) => {
+  const code =
+    sample(path.split('/').pop()!) +
+    `\nexport class ExpeditionJournal {\n  entries: string[] = [];\n\n  record(path: string) {\n    if (!this.entries.includes(path)) {\n      this.entries.push(path);\n    }\n  }\n}\n`;
+  const lines = code.split('\n');
+  const start = (text: string) =>
+    lines.findIndex((line) => line.includes(text)) + 1;
+  const constructs: CodeConstruct[] = [
+    {
+      id: 'explorer',
+      name: 'useExplorer',
+      kind: 'function',
+      start: start('export function useExplorer'),
+      end: start('return { ...state') + 1,
+      lines: 18,
+      complexity: 1,
+    },
+    {
+      id: 'enter',
+      name: 'enterRoom',
+      kind: 'function',
+      start: start('function enterRoom'),
+      end: start('return { ...state') - 3,
+      lines: 7,
+      complexity: 1,
+    },
+    {
+      id: 'journal',
+      name: 'ExpeditionJournal',
+      kind: 'class',
+      start: start('export class'),
+      end: lines.length - 1,
+      lines: 9,
+      complexity: 2,
+    },
+    {
+      id: 'record',
+      name: 'record',
+      kind: 'function',
+      start: start('record(path:'),
+      end: lines.length - 2,
+      lines: 5,
+      complexity: 2,
+    },
+  ];
+  return {
+    path,
+    code,
+    lines: lines.length,
+    todos: 1,
+    analysis: { constructs, mode: 'ast' as const },
+  };
+});
 export default function Home() {
   const [files, setFiles] = useState(demo),
     [repo, setRepo] = useState('repowalk / playground'),
@@ -63,6 +124,21 @@ export default function Home() {
     [inside, setInside] = useState(false),
     [sourceError, setSourceError] = useState(''),
     [sourceAttempt, setSourceAttempt] = useState(0),
+    [floor, setFloor] = useState(0),
+    [floorRequest, setFloorRequest] = useState<{
+      level: number;
+      serial: number;
+    } | null>(null),
+    [symbol, setSymbol] = useState<CodeConstruct | null>(null),
+    [historyOpen, setHistoryOpen] = useState(false),
+    [historyBusy, setHistoryBusy] = useState(false),
+    [historyError, setHistoryError] = useState(''),
+    [commits, setCommits] = useState<CommitInfo[]>([]),
+    [commitIndex, setCommitIndex] = useState(-1),
+    [snapshotRef, setSnapshotRef] = useState(''),
+    [layoutFiles, setLayoutFiles] = useState(demo),
+    [changes, setChanges] = useState<Record<string, ChangeKind>>({}),
+    [timeRevision, setTimeRevision] = useState(0),
     [notice, setNotice] = useState(''),
     [active, setActive] = useState<RepoFile | null>(null),
     [visited, setVisited] = useState<string[]>([]),
@@ -79,7 +155,107 @@ export default function Home() {
   const districts = useMemo(() => buildDistricts(files), [files]);
   const folders = districts.map((d) => d.path);
   const roomFiles = files.filter((f) => directoryOf(f.path) === folder);
-  const portals = buildPortals(files, districts, folder);
+  const allPortals = buildPortals(files, districts, folder);
+  const floorCount = floorsFor(districts.find((d) => d.path === folder));
+  const portals = floorPortals(allPortals, floor, floorCount);
+  const historyRequest = useRef(0);
+  const codePane = useRef<HTMLPreElement>(null);
+  useEffect(() => {
+    if (reading && symbol)
+      codePane.current
+        ?.querySelector(`[data-line="${symbol.start}"]`)
+        ?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }, [reading, symbol]);
+  useEffect(() => {
+    const escape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && reading) {
+        e.stopImmediatePropagation();
+        setReading(false);
+      }
+    };
+    window.addEventListener('keydown', escape, true);
+    return () => window.removeEventListener('keydown', escape, true);
+  }, [reading]);
+  function inspectSymbol(construct: CodeConstruct) {
+    setSymbol(construct);
+    setReading(true);
+  }
+  function takeLift(level: number) {
+    setFloorRequest((request) => ({
+      level,
+      serial: (request?.serial || 0) + 1,
+    }));
+  }
+  async function openHistory() {
+    setHistoryOpen(true);
+    if (commits.length || repo === 'repowalk / playground') return;
+    setHistoryBusy(true);
+    setHistoryError('');
+    const id = ++historyRequest.current;
+    try {
+      const response = await fetch('/api/history', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ repo: repo.replaceAll(' ', '') }),
+      });
+      const data = (await response.json()) as {
+        commits: CommitInfo[];
+        error?: string;
+      };
+      if (!response.ok) throw new Error(data.error);
+      if (id === historyRequest.current) setCommits(data.commits);
+    } catch (e) {
+      if (id === historyRequest.current) setHistoryError((e as Error).message);
+    } finally {
+      if (id === historyRequest.current) setHistoryBusy(false);
+    }
+  }
+  async function travelToCommit(index: number) {
+    if (!commits[index]) return;
+    setHistoryBusy(true);
+    setHistoryError('');
+    const id = ++historyRequest.current;
+    try {
+      const response = await fetch('/api/repository', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url: repo.replaceAll(' ', ''),
+          ref: commits[index].sha,
+        }),
+      });
+      const data = (await response.json()) as {
+        files: RepoFile[];
+        sampled: boolean;
+        error?: string;
+      };
+      if (!response.ok) throw new Error(data.error);
+      if (id !== historyRequest.current) return;
+      setChanges(compareFiles(files, data.files));
+      setLayoutFiles((previous) => {
+        const known = new Set(previous.map((f) => f.path));
+        return [...previous, ...data.files.filter((f) => !known.has(f.path))];
+      });
+      setFiles(data.files);
+      setSnapshotRef(commits[index].sha);
+      setCommitIndex(index);
+      setActive(null);
+      setInside(false);
+      setReading(false);
+      setSymbol(null);
+      setTimeRevision((n) => n + 1);
+      setNotice(
+        data.sampled
+          ? 'Partial snapshot: limited to 5,000 supported files.'
+          : '',
+      );
+    } catch (e) {
+      if (id === historyRequest.current) setHistoryError((e as Error).message);
+    } finally {
+      if (id === historyRequest.current) setHistoryBusy(false);
+    }
+  }
+
   const mapItems = inside
     ? portals
     : districts.map((d) => ({ path: d.path, kind: 'folder' as const }));
@@ -93,7 +269,7 @@ export default function Home() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         repo: repo.replaceAll(' ', ''),
-        branch,
+        branch: snapshotRef || branch,
         path: activePath,
       }),
       signal: controller.signal,
@@ -116,8 +292,11 @@ export default function Home() {
           setSourceError((error as Error).message);
       });
     return () => controller.abort();
-  }, [activePath, needsSource, repo, branch, sourceAttempt]);
+  }, [activePath, needsSource, repo, branch, sourceAttempt, snapshotRef]);
   function enterFolder(path: string) {
+    setSymbol(null);
+    setFloor(0);
+    setFloorRequest(null);
     setFolder(path);
     setInside(true);
     setActive(null);
@@ -174,6 +353,7 @@ export default function Home() {
     return () => lifecycle.abort();
   }, [files]);
   function enter(file: RepoFile) {
+    setSymbol(null);
     setInside(true);
     setFolder(directoryOf(file.path));
     setSourceError('');
@@ -205,6 +385,17 @@ export default function Home() {
           ? 'Large repository: showing the first 5,000 supported files.'
           : '',
       );
+      historyRequest.current++;
+      setCommits([]);
+      setHistoryOpen(false);
+      setHistoryBusy(false);
+      setCommitIndex(-1);
+      setSnapshotRef('');
+      setChanges({});
+      setLayoutFiles(data.files);
+      setSymbol(null);
+      setFloor(0);
+      setFloorRequest(null);
       setFiles(data.files);
       setRepo(data.repo);
       setBranch(data.branch);
@@ -332,6 +523,12 @@ export default function Home() {
             >
               <World
                 files={files}
+                layoutFiles={layoutFiles}
+                changes={changes}
+                timeRevision={timeRevision}
+                floorRequest={floorRequest}
+                onFloor={setFloor}
+                onInspect={inspectSymbol}
                 inside={inside}
                 onFolderEnter={enterFolder}
                 folder={folder}
@@ -366,7 +563,9 @@ export default function Home() {
             </h2>
             <div className="breadcrumb">
               {repo.split('/').pop()?.trim()} <ChevronRight size={12} />{' '}
-              {inside ? folder : 'Street level'}{' '}
+              {inside
+                ? `${folder} · ${floor === floorCount ? 'Rooftop' : `Floor ${floor + 1}`}`
+                : 'Street level'}{' '}
               {active && (
                 <>
                   <ChevronRight size={12} />
@@ -376,6 +575,13 @@ export default function Home() {
             </div>
           </div>
           <div className="scene-actions">
+            <button
+              title="Travel through Git history"
+              aria-label="Git history"
+              onClick={() => void openHistory()}
+            >
+              <History size={17} />
+            </button>
             <button
               title="Reset position"
               aria-label="Reset position"
@@ -418,6 +624,31 @@ export default function Home() {
               {inside ? 'Back to street' : notice}
             </button>
           )}
+          {inside && !active && (
+            <div className="elevator-panel">
+              <span>
+                <Building2 size={13} />
+                {floor === floorCount
+                  ? 'ROOFTOP OVERLOOK'
+                  : `FLOOR ${floor + 1} / ${floorCount}`}
+              </span>
+              <p>Walk upstairs on the right, or take the lift.</p>
+              <div>
+                {Array.from({ length: floorCount + 1 }, (_, level) => (
+                  <button
+                    key={level}
+                    className={level === floor ? 'current' : ''}
+                    onClick={() => takeLift(level)}
+                    title={
+                      level === floorCount ? 'Rooftop' : `Floor ${level + 1}`
+                    }
+                  >
+                    {level === floorCount ? 'R' : level + 1}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="location-tag">
             <span className="location-number">
               {String(folders.indexOf(folder) + 1).padStart(2, '0')}
@@ -434,7 +665,7 @@ export default function Home() {
                 {active
                   ? active.path.split('/').pop()
                   : inside
-                    ? `${roomFiles.length} rooms · ${portals.length - roomFiles.length} wings`
+                    ? `${portals.filter((p) => p.kind === 'file').length} rooms on this floor`
                     : `${folders.length} folder buildings`}
               </strong>
             </div>
@@ -449,6 +680,7 @@ export default function Home() {
                 <strong>You’re inside {active.path.split('/').pop()}</strong>
                 <p>
                   {sourceError ||
+                    (near ? `E · ${near}` : '') ||
                     (needsSource
                       ? 'Loading source from GitHub…'
                       : `${active.lines} lines of code · Explore the room or open its source.`)}
@@ -461,7 +693,10 @@ export default function Home() {
                   if (sourceError) {
                     setSourceError('');
                     setSourceAttempt((n) => n + 1);
-                  } else setReading(true);
+                  } else {
+                    setSymbol(null);
+                    setReading(true);
+                  }
                 }}
               >
                 {sourceError
@@ -498,6 +733,118 @@ export default function Home() {
                   </>
                 )}
               </span>
+            </div>
+          )}
+          {historyOpen && (
+            <div className="history-panel">
+              <div className="history-heading">
+                <span>
+                  <History size={15} /> TIME MACHINE
+                </span>
+                <button
+                  aria-label="Close history"
+                  onClick={() => setHistoryOpen(false)}
+                >
+                  <X size={16} />
+                </button>
+              </div>
+              {repo === 'repowalk / playground' ? (
+                <p>
+                  Import a public GitHub repository to walk through its real
+                  commit history.
+                </p>
+              ) : (
+                <>
+                  <div className="commit-navigation">
+                    <button
+                      disabled={
+                        historyBusy ||
+                        !commits.length ||
+                        commitIndex >= commits.length - 1
+                      }
+                      onClick={() =>
+                        void travelToCommit(
+                          Math.min(commits.length - 1, commitIndex + 1),
+                        )
+                      }
+                    >
+                      <ChevronLeft size={17} /> Older
+                    </button>
+                    <span>
+                      {commitIndex < 0
+                        ? 'Current branch'
+                        : commits[commitIndex]?.sha.slice(0, 7)}
+                    </span>
+                    <button
+                      disabled={historyBusy || commitIndex <= 0}
+                      onClick={() => void travelToCommit(commitIndex - 1)}
+                    >
+                      Newer <ChevronRight size={17} />
+                    </button>
+                  </div>
+                  <p className="commit-message">
+                    {historyBusy
+                      ? 'Reconstructing this moment…'
+                      : commitIndex < 0
+                        ? 'Choose a commit to see the city change.'
+                        : commits[commitIndex]?.message}
+                  </p>
+                  {commitIndex >= 0 && (
+                    <small>
+                      {commits[commitIndex]?.author} ·{' '}
+                      {new Date(commits[commitIndex].date).toLocaleDateString()}
+                    </small>
+                  )}
+                  <div className="commit-ticks">
+                    {commits.map((commit, index) => (
+                      <button
+                        key={commit.sha}
+                        disabled={historyBusy}
+                        className={index === commitIndex ? 'selected' : ''}
+                        title={`${commit.sha.slice(0, 7)} · ${commit.message}`}
+                        aria-label={`Travel to commit ${commit.sha.slice(0, 7)}: ${commit.message}`}
+                        onClick={() => void travelToCommit(index)}
+                      />
+                    ))}
+                  </div>
+                  <div className="history-legend">
+                    <span>
+                      ●{' '}
+                      {
+                        Object.values(changes).filter((c) => c === 'added')
+                          .length
+                      }{' '}
+                      added
+                    </span>
+                    <span>
+                      ●{' '}
+                      {
+                        Object.values(changes).filter((c) => c === 'modified')
+                          .length
+                      }{' '}
+                      modified
+                    </span>
+                    <span>
+                      ●{' '}
+                      {
+                        Object.values(changes).filter((c) => c === 'removed')
+                          .length
+                      }{' '}
+                      removed
+                    </span>
+                  </div>
+                  <small>
+                    Changes since the previously viewed snapshot · latest 20
+                    commits
+                  </small>
+                  {historyError && (
+                    <p className="error" role="alert">
+                      {historyError}
+                      <button onClick={() => void openHistory()}> Retry</button>
+                    </p>
+                  )}
+                </>
+              )}
             </div>
           )}
           <div className={'minimap ' + (map ? 'expanded' : '')}>
@@ -596,6 +943,33 @@ export default function Home() {
               E
             </button>
           </div>
+          {active && !reading && active.analysis && (
+            <div className="symbol-panel">
+              <span className="eyebrow">
+                {active.analysis.mode === 'ast'
+                  ? 'WALK THE SOURCE'
+                  : 'SOURCE VIEW'}
+              </span>
+              {active.analysis.mode === 'ast' ? (
+                <>
+                  <p>Walk up to a station and press E to inspect it.</p>
+                  {active.analysis.constructs.map((c) => (
+                    <button key={c.id} onClick={() => inspectSymbol(c)}>
+                      <span>{c.kind === 'class' ? '◇' : 'ƒ'}</span>
+                      {c.name}
+                      <small>L{c.start}</small>
+                    </button>
+                  ))}
+                </>
+              ) : (
+                <p>
+                  {active.analysis.mode === 'unsupported'
+                    ? 'Function architecture currently supports JavaScript and TypeScript. The full source remains available.'
+                    : 'This file could not be parsed. You can still read its full source.'}
+                </p>
+              )}
+            </div>
+          )}
           {reading && active && (
             <div className="code-panel">
               <div className="code-heading">
@@ -611,11 +985,27 @@ export default function Home() {
                 </button>
               </div>
               <div className="code-meta">
-                SOURCE CODE <span>{active.lines} lines · Read only</span>
+                {symbol
+                  ? `${symbol.kind.toUpperCase()} · ${symbol.name}`
+                  : 'SOURCE CODE'}{' '}
+                <span>
+                  {symbol
+                    ? `Lines ${symbol.start}–${symbol.end}`
+                    : `${active.lines} lines`}{' '}
+                  · Read only
+                </span>
               </div>
-              <pre>
+              <pre ref={codePane}>
                 {active.code.split('\n').map((line, i) => (
-                  <div key={i}>
+                  <div
+                    key={i}
+                    data-line={i + 1}
+                    className={
+                      symbol && i + 1 >= symbol.start && i + 1 <= symbol.end
+                        ? 'selected-source'
+                        : ''
+                    }
+                  >
                     <span className="line-number">{i + 1}</span>
                     <code
                       className={

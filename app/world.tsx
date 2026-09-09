@@ -4,6 +4,15 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import type { RepoFile } from './page';
 import {
+  floorsFor,
+  floorPortals,
+  walkingHeight,
+  symbolPosition,
+  roomDepth,
+  type CodeConstruct,
+  type ChangeKind,
+} from '@/lib/exploration';
+import {
   buildDistricts,
   buildPortals,
   type District,
@@ -11,6 +20,12 @@ import {
 } from '@/lib/world-layout';
 type Props = {
   files: RepoFile[];
+  layoutFiles: RepoFile[];
+  changes: Record<string, ChangeKind>;
+  timeRevision: number;
+  floorRequest: { level: number; serial: number } | null;
+  onFloor: (floor: number) => void;
+  onInspect: (symbol: CodeConstruct) => void;
   folder: string;
   inside: boolean;
   onFolderEnter: (path: string) => void;
@@ -105,12 +120,23 @@ function Building({
   district,
   i,
   onEnter,
+  status = 'unchanged',
 }: {
   district: District;
+  status?: ChangeKind;
   i: number;
   onEnter: (path: string) => void;
 }) {
-  const { x, z, scale, height: h } = district;
+  const { x, z, scale } = district;
+  const h = floorsFor(district) * 6 + 0.3;
+  const accent =
+    status === 'added'
+      ? '#92dfb1'
+      : status === 'modified'
+        ? '#c0a0f0'
+        : status === 'removed'
+          ? '#dc8c8c'
+          : amber;
   return (
     <group position={[x, 0, z]} scale={[scale, 1, scale]}>
       <Block p={[0, 0.15, 0]} s={[9, 0.3, 8.8]} c="#526064" />
@@ -139,7 +165,13 @@ function Building({
           <Block
             p={[wx, 2.3, 3]}
             s={[1.1, 1.5, 0.03]}
-            c={i % 3 === 1 ? '#ca985e' : '#8baaa8'}
+            c={
+              status === 'unchanged'
+                ? i % 3 === 1
+                  ? '#ca985e'
+                  : '#8baaa8'
+                : accent
+            }
             glow={0.65}
           />
           <Block p={[wx, 2.3, 3.04]} s={[0.08, 1.6, 0.07]} c="#3c4b4b" />
@@ -148,9 +180,9 @@ function Building({
         </group>
       ))}
       <Block p={[0, 1.52, 3.01]} s={[2.2, 3.05, 0.22]} c="#1b282e" />
-      <Block p={[-1.04, 1.52, 3.16]} s={[0.07, 3, 0.1]} c={amber} glow={2} />
-      <Block p={[1.04, 1.52, 3.16]} s={[0.07, 3, 0.1]} c={amber} glow={2} />
-      <Block p={[0, 3.04, 3.16]} s={[2.15, 0.07, 0.1]} c={amber} glow={2} />
+      <Block p={[-1.04, 1.52, 3.16]} s={[0.07, 3, 0.1]} c={accent} glow={2} />
+      <Block p={[1.04, 1.52, 3.16]} s={[0.07, 3, 0.1]} c={accent} glow={2} />
+      <Block p={[0, 3.04, 3.16]} s={[2.15, 0.07, 0.1]} c={accent} glow={2} />
       <mesh
         position={[0, 1.47, 3.2]}
         onClick={(e) => {
@@ -170,7 +202,7 @@ function Building({
       <Block
         p={[0.68, 1.45, 3.31]}
         s={[0.055, 0.32, 0.09]}
-        c={amber}
+        c={accent}
         glow={1}
       />
       <Block p={[0, 0.24, 3.57]} s={[2.8, 0.2, 1.1]} c="#77827b" />
@@ -213,7 +245,7 @@ function Building({
         position={[0, 2.5, 4.1]}
         intensity={22}
         distance={7}
-        color={amber}
+        color={accent}
         decay={2}
       />
       <Block p={[-3.53, 1.9, 3.18]} s={[0.08, 3.8, 0.12]} c="#83908b" />
@@ -229,7 +261,15 @@ function Building({
     </group>
   );
 }
-function Interior({ file }: { file: RepoFile }) {
+function Interior({
+  file,
+  onInspect,
+}: {
+  file: RepoFile;
+  onInspect: (symbol: CodeConstruct) => void;
+}) {
+  const constructs = file.analysis?.constructs || [],
+    depth = roomDepth(constructs.length);
   const texture = useMemo(() => {
     const canvas = document.createElement('canvas');
     canvas.width = 1536;
@@ -256,37 +296,301 @@ function Interior({ file }: { file: RepoFile }) {
   useEffect(() => () => texture.dispose(), [texture]);
   return (
     <group>
-      <Block p={[0, -0.2, -2]} s={[17, 0.4, 18]} c="#435657" />
-      <Block p={[0, 3.2, -10]} s={[17, 6.4, 0.45]} c="#394a50" />
-      <Block p={[-8.5, 3.2, -2]} s={[0.45, 6.4, 16]} c="#34494e" />
-      <Block p={[8.5, 3.2, -2]} s={[0.45, 6.4, 16]} c="#34494e" />
-      <Label text={file.path} p={[0, 5.7, -9.72]} width={11} size={36} />
-      <mesh position={[0, 3.2, -9.7]}>
+      <Block
+        p={[0, -0.2, (8 - depth) / 2]}
+        s={[22, 0.4, depth + 8]}
+        c="#384b50"
+      />
+      <Block
+        p={[0, 0.025, (8 - depth) / 2]}
+        s={[2.2, 0.035, depth + 8]}
+        c="#657269"
+      />
+      <Block p={[0, 3.2, -depth]} s={[22, 6.4, 0.45]} c="#273d49" />
+      <Block
+        p={[-11, 2, (8 - depth) / 2]}
+        s={[0.4, 4, depth + 8]}
+        c="#34494e"
+      />
+      <Block p={[11, 2, (8 - depth) / 2]} s={[0.4, 4, depth + 8]} c="#34494e" />
+      <Label
+        text={file.path + ' / SOURCE ARCHITECTURE'}
+        p={[0, 5.8, -depth + 0.3]}
+        width={15}
+        size={36}
+      />
+      <mesh position={[0, 3.1, -depth + 0.3]}>
         <planeGeometry args={[9, 5.2]} />
         <meshBasicMaterial map={texture} />
       </mesh>
-      <Block p={[0, 0.35, -8.7]} s={[10, 0.7, 2]} c="#4b5d5c" />
-      {[-7.5, 7.5].map((x) => (
-        <group key={x}>
-          <Block p={[x, 3, -9.6]} s={[0.12, 5.6, 0.15]} c={amber} glow={3} />
-          <pointLight
-            position={[x, 4, -7]}
-            color={amber}
-            intensity={45}
-            distance={13}
-          />
-          <Block p={[x / 1.6, 0.7, -3]} s={[2.5, 1.4, 1.2]} c="#2b4048" />
-          <Block p={[x / 1.6, 1.45, -3]} s={[2.8, 0.1, 1.4]} c="#9aa99c" />
-        </group>
-      ))}
-      <Label text="←  ESC · BACK TO THE DISTRICT" p={[0, 1.6, 5]} width={5} />
+      {constructs.map((symbol, i) => {
+        const { x, z } = symbolPosition(i),
+          height =
+            (symbol.kind === 'class' ? 2.6 : 1) +
+            Math.log2(symbol.lines + 1) * 0.35;
+        const color =
+          symbol.kind === 'class'
+            ? '#b9a0ed'
+            : symbol.complexity > 6
+              ? '#edaa72'
+              : '#8ad2ca';
+        return (
+          <group key={symbol.id} position={[x, 0, z]}>
+            <Block p={[0, 0.15, 0]} s={[3.2, 0.3, 3]} c="#2a3942" />
+            <mesh
+              position={[0, height / 2 + 0.3, 0]}
+              onClick={(e) => {
+                e.stopPropagation();
+                onInspect(symbol);
+              }}
+            >
+              <boxGeometry
+                args={[symbol.kind === 'class' ? 1.8 : 2.5, height, 1.6]}
+              />
+              <meshStandardMaterial
+                color="#314852"
+                metalness={0.4}
+                roughness={0.4}
+              />
+            </mesh>
+            <Block
+              p={[0, height + 0.35, 0]}
+              s={[2.9, 0.1, 2.3]}
+              c={color}
+              glow={1.5}
+            />
+            {Array.from(
+              { length: Math.min(8, Math.ceil(symbol.lines / 8)) },
+              (_, j) => (
+                <Block
+                  key={j}
+                  p={[0, 0.6 + j * 0.32, 0.84]}
+                  s={[1.7 - 0.08 * (j % 3), 0.06, 0.02]}
+                  c={color}
+                  glow={1.4}
+                />
+              ),
+            )}
+            <Label
+              text={symbol.name}
+              p={[0, height + 0.92, 1.2]}
+              width={4.1}
+              size={40}
+              color={color}
+            />
+            <Label
+              text={`${symbol.kind.toUpperCase()} · L${symbol.start}–${symbol.end}`}
+              p={[0, 0.65, 1.62]}
+              width={3.1}
+              size={30}
+            />
+            {i < 12 && (
+              <pointLight
+                position={[0, height + 0.8, 1]}
+                color={color}
+                intensity={10}
+                distance={8}
+              />
+            )}
+          </group>
+        );
+      })}
+      <Label
+        text={
+          constructs.length
+            ? `${constructs.length} STRUCTURES · E TO INSPECT`
+            : 'SOURCE READING ROOM'
+        }
+        p={[0, 1.5, 6]}
+        width={6}
+      />
       <pointLight
-        position={[0, 5, 0]}
-        color="#99c9d1"
-        intensity={40}
-        distance={16}
+        position={[0, 6, 3]}
+        color="#afcad4"
+        intensity={45}
+        distance={22}
       />
     </group>
+  );
+}
+function TemporalBuilding({
+  district,
+  i,
+  onEnter,
+  status,
+  revision,
+}: {
+  district: District;
+  i: number;
+  onEnter: (path: string) => void;
+  status: ChangeKind;
+  revision: number;
+}) {
+  const group = useRef<THREE.Group>(null),
+    progress = useRef(0);
+  useEffect(() => {
+    progress.current = 0;
+    if (group.current)
+      group.current.traverse((object) => {
+        if (object instanceof THREE.Mesh) {
+          const materials = Array.isArray(object.material)
+            ? object.material
+            : [object.material];
+          materials.forEach((material) => {
+            material.transparent = status === 'removed';
+            material.opacity = status === 'removed' ? 0.2 : 1;
+          });
+        }
+      });
+  }, [status, revision]);
+  useFrame((_, dt) => {
+    progress.current = Math.min(1, progress.current + dt * 0.85);
+    if (group.current) {
+      const target = status === 'removed' ? 0.15 : 1;
+      group.current.scale.y =
+        status === 'added'
+          ? THREE.MathUtils.smoothstep(progress.current, 0, 1)
+          : status === 'removed'
+            ? THREE.MathUtils.lerp(1, target, progress.current)
+            : 1;
+    }
+  });
+  return (
+    <group ref={group}>
+      <Building
+        district={district}
+        i={i}
+        onEnter={status === 'removed' ? () => {} : onEnter}
+        status={status}
+      />
+    </group>
+  );
+}
+function Stairwell({ floors, current }: { floors: number; current: number }) {
+  return (
+    <group>
+      {Array.from({ length: floors }, (_, flight) =>
+        Math.abs(flight - current) <= 1 ? (
+          <group key={flight}>
+            {Array.from({ length: 24 }, (_, step) => {
+              const rise = (step + 1) * 0.25,
+                z =
+                  flight % 2 === 0
+                    ? 8 - (step + 0.5) * 0.25
+                    : 2 + (step + 0.5) * 0.25;
+              return (
+                <group key={step}>
+                  <Block
+                    p={[8 + (flight % 2) * 3.8, flight * 6 + rise / 2, z]}
+                    s={[3.2, rise, 0.25]}
+                    c={step % 2 ? '#84918a' : '#74857d'}
+                  />
+                  <Block
+                    p={[8 + (flight % 2) * 3.8, flight * 6 + rise + 0.025, z]}
+                    s={[3.15, 0.025, 0.035]}
+                    c={amber}
+                    glow={0.9}
+                  />
+                </group>
+              );
+            })}
+            {[6.35, 9.65].map((x) => (
+              <group key={x}>
+                {Array.from({ length: 7 }, (_, j) => {
+                  const z = 2 + j,
+                    height = flight * 6 + (flight % 2 === 0 ? 8 - z : z - 2);
+                  return (
+                    <Block
+                      key={j}
+                      p={[x + (flight % 2) * 3.8, height + 0.55, z]}
+                      s={[0.055, 1.1, 0.055]}
+                      c="#81988d"
+                    />
+                  );
+                })}
+              </group>
+            ))}
+          </group>
+        ) : null,
+      )}
+      {Array.from({ length: floors + 1 }, (_, level) =>
+        Math.abs(level - current) <= 1 ? (
+          <group key={'landing' + level}>
+            <Block
+              p={[7, level * 6 - 0.12, 8.6]}
+              s={[13, 0.24, 1.2]}
+              c="#60746c"
+            />
+            <Block
+              p={[7, level * 6 - 0.12, 1.4]}
+              s={[13, 0.24, 1.2]}
+              c="#60746c"
+            />
+            <Label
+              text={
+                level === floors ? 'ROOFTOP ↑' : `FLOOR ${level + 1} · STAIRS ↑`
+              }
+              p={[8, level * 6 + 1.3, 9.15]}
+              width={3.5}
+              size={35}
+            />
+          </group>
+        ) : null,
+      )}
+    </group>
+  );
+}
+function Roof({
+  district,
+  districts,
+  level,
+  onEnter,
+}: {
+  district: District | undefined;
+  districts: District[];
+  level: number;
+  onEnter: (path: string) => void;
+}) {
+  return (
+    <>
+      <group position={[0, level * 6, 0]}>
+        <Block p={[1.5, -0.2, -2]} s={[25, 0.4, 21]} c="#4e625f" />
+        <Block p={[-10.7, 0.55, -2]} s={[0.2, 1.1, 21]} c="#71847a" />
+        <Block p={[13.7, 0.55, -2]} s={[0.2, 1.1, 21]} c="#71847a" />
+        <Block p={[0, 0.55, -12.4]} s={[21.5, 1.1, 0.2]} c="#71847a" />
+        <Block p={[0, 0.03, -3]} s={[7, 0.035, 7]} c="#687a70" />
+        <Label
+          text={(district?.path || '') + ' / ROOFTOP OBSERVATORY'}
+          p={[0, 2, -10]}
+          width={12}
+        />
+        <Block p={[-7, 0.65, -5]} s={[2.3, 1.3, 2]} c="#374d55" />
+        <Block p={[-7, 1.4, -5]} s={[2.6, 0.12, 2.3]} c="#a4b9a7" />
+        <Label text="YOUR REPOSITORY, FROM ABOVE" p={[0, 1.7, -7]} width={7} />
+        <pointLight
+          position={[0, 3, -4]}
+          color={amber}
+          intensity={25}
+          distance={17}
+        />
+      </group>
+      <group position={[-(district?.x || 0), 0, -(district?.z || 0)]}>
+        {districts
+          .filter(
+            (d) =>
+              d.path !== district?.path &&
+              Math.abs(d.z - (district?.z || 0)) < 100,
+          )
+          .map((d, i) => (
+            <Building key={d.path} district={d} i={i} onEnter={onEnter} />
+          ))}
+        <Block
+          p={[0, -0.4, (district?.z || 0) - 20]}
+          s={[160, 0.5, 250]}
+          c="#263b44"
+        />
+      </group>
+    </>
   );
 }
 function Player({ moving }: { moving: React.RefObject<boolean> }) {
@@ -333,7 +637,9 @@ function Hallway({
   folder,
   onPortal,
   region,
+  level=0,
 }: {
+  level?:number;
   portals: Portal[];
   folder: string;
   onPortal: (p: Portal) => void;
@@ -349,7 +655,7 @@ function Hallway({
         c="#596762"
       />
       <Block p={[-7, 1.7, (end + 9) / 2]} s={[0.3, 3.4, 9 - end]} c="#34464c" />
-      <Block p={[7, 1.7, (end + 9) / 2]} s={[0.3, 3.4, 9 - end]} c="#34464c" />
+      <Block p={[7, 1.7, (end + 1) / 2]} s={[0.3, 3.4, 1 - end]} c="#34464c" />
       <Block p={[0, 2, end]} s={[14, 4, 0.3]} c="#34464c" />
       <Label
         text={folder + ' /  FILE GALLERY'}
@@ -429,7 +735,7 @@ function Hallway({
           </group>
         ))}
       <group position={[0, 0, 8]} rotation={[0, Math.PI, 0]}>
-        <Label text="EXIT TO STREET · E" p={[0, 1.7, 0]} width={4} />
+        <Label text={level===0?"EXIT TO STREET · E":"STAIRS DOWN · LIFT TO STREET"} p={[0, 1.7, 0]} width={4} />
         <Block p={[0, 0.04, 0]} s={[4, 0.08, 1]} c="#8fa797" />
       </group>
       <pointLight
@@ -441,9 +747,14 @@ function Hallway({
     </group>
   );
 }
+type Interaction =
+  | Portal
+  | { kind: 'exit'; path: string }
+  | { kind: 'symbol'; path: string; symbol: CodeConstruct };
 function Scene(props: Props) {
   const {
     files,
+    layoutFiles,
     folder,
     inside,
     active,
@@ -453,26 +764,49 @@ function Scene(props: Props) {
     onNear,
     reset,
     paused,
+    onFloor,
+    onInspect,
+    floorRequest,
+    changes,
+    timeRevision,
   } = props;
-  const districts = useMemo(() => buildDistricts(files), [files]);
-  const portals = useMemo(
+  const districts = useMemo(() => {
+    const current = new Map(buildDistricts(files).map((d) => [d.path, d]));
+    return buildDistricts(layoutFiles).map((base) => ({
+      ...base,
+      ...current.get(base.path),
+      x: base.x,
+      z: base.z,
+    }));
+  }, [files, layoutFiles]);
+  const currentDistrict = districts.find((d) => d.path === folder),
+    floors = floorsFor(currentDistrict);
+  const allPortals = useMemo(
     () => buildPortals(files, districts, folder),
     [files, districts, folder],
   );
+  const [level, setLevel] = useState(0),
+    [region, setRegion] = useState(0);
+  const levelRef = useRef(0),
+    regionRef = useRef(0);
+  const portals = useMemo(
+    () => floorPortals(allPortals, level, floors),
+    [allPortals, level, floors],
+  );
   const player = useRef<THREE.Group>(null),
+    lift = useRef<THREE.Group>(null),
     moving = useRef(false),
     keys = useRef(new Set<string>()),
     angle = useRef(0.28),
     zoom = useRef(25),
     drag = useRef<number | null>(null),
     lastNear = useRef(''),
-    nearest = useRef<Portal | { kind: 'exit'; path: string } | null>(null),
+    nearest = useRef<Interaction | null>(null),
     target = useRef(new THREE.Vector3()),
     positions = useRef(new Map<string, THREE.Vector3>()),
     previous = useRef('city'),
-    lastReset = useRef(reset);
-  const [region, setRegion] = useState(0);
-  const regionRef = useRef(0);
+    lastReset = useRef(reset),
+    elevatorTarget = useRef<number | null>(null);
   const { camera, gl } = useThree();
   const activePath = active?.path;
   const location = activePath
@@ -480,21 +814,21 @@ function Scene(props: Props) {
     : inside
       ? 'hall:' + folder
       : 'city';
-  const perform = (portal: Portal | { kind: 'exit'; path: string }) => {
-    if (portal.kind === 'exit') {
-      onLeave();
-      return;
+  const activate = (item: Interaction) => {
+    if (item.kind === 'exit') onLeave();
+    else if (item.kind === 'symbol') onInspect(item.symbol);
+    else if (item.kind === 'folder') onFolderEnter(item.path);
+    else {
+      const file = files.find((f) => f.path === item.path);
+      if (file) onEnter(file);
     }
-    if (portal.kind === 'folder') {
-      onFolderEnter(portal.path);
-      return;
-    }
-    const file = files.find((f) => f.path === portal.path);
-    if (file) onEnter(file);
   };
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
-      if ((e.target as HTMLElement)?.closest('input,textarea') || paused)
+      if (
+        (e.target instanceof Element && e.target.closest('input,textarea,[role="slider"]')) ||
+        paused
+      )
         return;
       const k = e.key.toLowerCase();
       if (
@@ -512,12 +846,13 @@ function Scene(props: Props) {
       )
         e.preventDefault();
       keys.current.add(k);
-      if (k === 'e' && !e.repeat && nearest.current && !activePath) {
-        const portal = nearest.current;
-        if (portal.kind === 'exit') onLeave();
-        else if (portal.kind === 'folder') onFolderEnter(portal.path);
+      if (k === 'e' && !e.repeat && nearest.current) {
+        const item = nearest.current;
+        if (item.kind === 'exit') onLeave();
+        else if (item.kind === 'symbol') onInspect(item.symbol);
+        else if (item.kind === 'folder') onFolderEnter(item.path);
         else {
-          const file = files.find((f) => f.path === portal.path);
+          const file = files.find((f) => f.path === item.path);
           if (file) onEnter(file);
         }
       }
@@ -533,7 +868,16 @@ function Scene(props: Props) {
       window.removeEventListener('keyup', up);
       window.removeEventListener('blur', blur);
     };
-  }, [activePath, inside, onEnter, onFolderEnter, onLeave, paused, files]);
+  }, [
+    activePath,
+    inside,
+    onEnter,
+    onFolderEnter,
+    onLeave,
+    onInspect,
+    paused,
+    files,
+  ]);
   useEffect(() => {
     if (player.current) {
       if (lastReset.current !== reset) {
@@ -552,10 +896,21 @@ function Scene(props: Props) {
       target.current.copy(player.current.position);
       previous.current = location;
     }
+    elevatorTarget.current = null;
+    levelRef.current = -1;
     keys.current.clear();
     lastNear.current = '';
     onNear('');
   }, [location, activePath, inside, onNear, reset]);
+  useEffect(() => {
+    if (floorRequest && inside && !activePath && player.current) {
+      player.current.position.x = 2;
+      player.current.position.z = 8.6;
+      elevatorTarget.current =
+        Math.min(floors, Math.max(0, floorRequest.level)) * 6;
+      keys.current.clear();
+    }
+  }, [floorRequest, inside, activePath, floors]);
   useEffect(() => {
     const el = gl.domElement;
     const down = (e: PointerEvent) => {
@@ -575,7 +930,7 @@ function Scene(props: Props) {
       zoom.current = THREE.MathUtils.clamp(
         zoom.current + e.deltaY * 0.015,
         10,
-        46,
+        60,
       );
     };
     el.addEventListener('pointerdown', down);
@@ -590,50 +945,82 @@ function Scene(props: Props) {
     };
   }, [gl]);
   const cityEnd = (districts.at(-1)?.z || 0) - 15,
-    hallEnd = (portals.at(-1)?.z || 0) - 2;
-  useFrame((_, dt) => {
+    hallEnd = (portals.at(-1)?.z || 0) - 2,
+    depth = roomDepth(active?.analysis?.constructs.length || 0);
+  useFrame((_, delta) => {
     if (!player.current) return;
-    dt = Math.min(dt, 0.04);
-    const p = player.current;
+    const dt = Math.min(delta, 0.04),
+      p = player.current;
     let dx = 0,
       dz = 0;
-    if (!paused) {
+    if (!paused && elevatorTarget.current === null) {
       if (keys.current.has('w') || keys.current.has('arrowup')) dz--;
       if (keys.current.has('s') || keys.current.has('arrowdown')) dz++;
       if (keys.current.has('a') || keys.current.has('arrowleft')) dx--;
       if (keys.current.has('d') || keys.current.has('arrowright')) dx++;
+    }
+    if (elevatorTarget.current !== null) {
+      const difference = elevatorTarget.current - p.position.y;
+      const step =
+        Math.sign(difference) * Math.min(Math.abs(difference), dt * 4.5);
+      p.position.y += step;
+      if (Math.abs(difference) < 0.03) {
+        p.position.y = elevatorTarget.current;
+        elevatorTarget.current = null;
+      }
     }
     moving.current = !!(dx || dz);
     if (moving.current) {
       const length = Math.hypot(dx, dz);
       dx /= length;
       dz /= length;
-      const speed = (keys.current.has('shift') ? 8 : 4.4) * dt;
-      const mx =
+      const speed = (keys.current.has('shift') ? 8 : 4.4) * dt,
+        mx =
           (dx * Math.cos(angle.current) + dz * Math.sin(angle.current)) * speed,
         mz =
           (-dx * Math.sin(angle.current) + dz * Math.cos(angle.current)) *
           speed;
-      const nx = p.position.x + mx,
-        nz = p.position.z + mz;
       const blocked = (x: number, z: number) =>
-        !inside &&
-        !activePath &&
-        districts.some(
-          (d) =>
-            Math.abs(x - d.x) < 3.8 * d.scale + 0.35 &&
-            z < d.z + 2.85 * d.scale + 0.4 &&
-            z > d.z - 4.05 * d.scale - 0.4,
-        );
-      const bound = activePath ? 7.5 : inside ? 3.8 : 35;
-      if (!blocked(nx, p.position.z))
-        p.position.x = THREE.MathUtils.clamp(nx, -bound, bound);
-      if (!blocked(p.position.x, nz))
-        p.position.z = THREE.MathUtils.clamp(
-          nz,
-          activePath ? -7.5 : inside ? hallEnd : cityEnd,
-          activePath ? 6 : inside ? 8 : 20,
-        );
+        activePath
+          ? (active?.analysis?.constructs || []).some((_, i) => {
+              const q = symbolPosition(i);
+              return Math.abs(x - q.x) < 1.8 && Math.abs(z - q.z) < 1.65;
+            })
+          : inside
+            ? level < floors && z < 1 && Math.abs(x) > 3.8
+            : districts.some(
+                (d) =>
+                  Math.abs(x - d.x) < 3.8 * d.scale + 0.35 &&
+                  z < d.z + 2.85 * d.scale + 0.4 &&
+                  z > d.z - 4.05 * d.scale - 0.4,
+              );
+      const minX = activePath
+          ? -10
+          : inside
+            ? level === floors
+              ? -10
+              : -6.5
+            : -35,
+        maxX = activePath ? 10 : inside ? 13.4 : 35,
+        minZ = activePath
+          ? -depth + 1
+          : inside
+            ? level === floors
+              ? -11
+              : hallEnd
+            : cityEnd,
+        maxZ = activePath ? 6 : inside ? 9 : 20;
+      const move = (x: number, z: number) => {
+        x = THREE.MathUtils.clamp(x, minX, maxX);
+        z = THREE.MathUtils.clamp(z, minZ, maxZ);
+        if (blocked(x, z)) return;
+        const height =
+          inside && !activePath ? walkingHeight(x, z, p.position.y, floors) : 0;
+        if (height === null) return;
+        p.position.set(x, height, z);
+      };
+      move(p.position.x + mx, p.position.z);
+      move(p.position.x, p.position.z + mz);
       const rotation = Math.atan2(mx, mz);
       p.rotation.y +=
         Math.atan2(
@@ -642,12 +1029,38 @@ function Scene(props: Props) {
         ) *
         (1 - Math.exp(-12 * dt));
     }
-    let close: Portal | { kind: 'exit'; path: string } | null = null;
-    if (!activePath) {
-      if (inside) {
-        if (p.position.z > 6.8)
-          close = { kind: 'exit', path: 'Back to the street' };
-        else
+    const nextLevel =
+      inside && !activePath
+        ? Math.max(0, Math.min(floors, Math.round(p.position.y / 6)))
+        : levelRef.current;
+    if (nextLevel !== levelRef.current) {
+      levelRef.current = nextLevel;
+      setLevel(nextLevel);
+      onFloor(nextLevel);
+    }
+    if (lift.current) {
+      lift.current.visible = inside && !activePath;
+      lift.current.position.set(2, p.position.y - 0.13, 8.6);
+    }
+    let close: Interaction | null = null;
+    if (activePath) {
+      for (const [i, symbol] of (
+        active?.analysis?.constructs || []
+      ).entries()) {
+        const q = symbolPosition(i);
+        if (Math.hypot(p.position.x - q.x, p.position.z - q.z) < 3.4) {
+          close = { kind: 'symbol', path: symbol.name, symbol };
+          break;
+        }
+      }
+    } else if (inside) {
+      if (
+        elevatorTarget.current === null &&
+        Math.abs(p.position.y - level * 6) < 0.3
+      ) {
+        if (level === 0 && p.position.z > 7 && Math.abs(p.position.x) < 1.4)
+          close = { kind: 'exit', path: 'Back to street' };
+        else if (level < floors)
           for (const portal of portals) {
             if (
               Math.hypot(p.position.x - portal.x, p.position.z - portal.z) < 2.4
@@ -656,27 +1069,30 @@ function Scene(props: Props) {
               break;
             }
           }
-      } else
-        for (const d of districts) {
-          if (
-            Math.hypot(
-              p.position.x - d.x,
-              p.position.z - (d.z + 3.8 * d.scale),
-            ) <
+      }
+    } else
+      for (const d of districts) {
+        const exists = files.some(
+          (f) => d.path === '.' || f.path.startsWith(d.path + '/'),
+        );
+        if (
+          exists &&
+          Math.hypot(p.position.x - d.x, p.position.z - (d.z + 3.8 * d.scale)) <
             3.2 * d.scale
-          ) {
-            close = { kind: 'folder', path: d.path, x: d.x, z: d.z };
-            break;
-          }
+        ) {
+          close = { kind: 'folder', path: d.path, x: d.x, z: d.z };
+          break;
         }
-    }
+      }
     nearest.current = close;
     const name = close
-      ? close.kind === 'folder'
-        ? close.path + '/'
-        : close.kind === 'exit'
-          ? close.path
-          : close.path.split('/').pop()!
+      ? close.kind === 'symbol'
+        ? `Inspect ${close.path}`
+        : close.kind === 'folder'
+          ? close.path + '/'
+          : close.kind === 'exit'
+            ? close.path
+            : close.path.split('/').pop()!
       : '';
     if (name !== lastNear.current) {
       lastNear.current = name;
@@ -691,7 +1107,7 @@ function Scene(props: Props) {
       new THREE.Vector3(p.position.x, p.position.y + 1, p.position.z - 3),
       1 - Math.exp(-4 * dt),
     );
-    const dist = inside || activePath ? zoom.current * 0.59 : zoom.current;
+    const dist = inside || activePath ? zoom.current * 0.62 : zoom.current;
     const desired = new THREE.Vector3(
       target.current.x + Math.sin(angle.current) * dist,
       target.current.y + dist * 0.79,
@@ -700,33 +1116,65 @@ function Scene(props: Props) {
     camera.position.lerp(desired, 1 - Math.exp(-4 * dt));
     camera.lookAt(target.current);
   });
+  const statusFor = (d: District): ChangeKind => {
+    const values = Object.entries(changes)
+      .filter(([path]) => d.path === '.' || path.startsWith(d.path + '/'))
+      .map(([, kind]) => kind);
+    if (values.length && values.every((v) => v === 'removed')) return 'removed';
+    if (values.length && values.every((v) => v === 'added')) return 'added';
+    return values.some((v) => v !== 'unchanged') ? 'modified' : 'unchanged';
+  };
   return (
     <>
       <color attach="background" args={['#19252d']} />
-      <fog attach="fog" args={['#19252d', 35, 110]} />
+      <fog attach="fog" args={['#19252d', 35, 120]} />
       <ambientLight intensity={0.55} color="#a2bdc8" />
       <hemisphereLight args={['#a7c5d1', '#26363d', 1.4]} />
       <directionalLight
-        position={[-12, 25, 7]}
+        position={[-12, 40, 7]}
         color="#c5d3d2"
         intensity={2.5}
         castShadow
         shadow-mapSize={[2048, 2048]}
-        shadow-camera-left={-45}
-        shadow-camera-right={45}
-        shadow-camera-top={45}
-        shadow-camera-bottom={-45}
+        shadow-camera-left={-50}
+        shadow-camera-right={50}
+        shadow-camera-top={50}
+        shadow-camera-bottom={-50}
         shadow-bias={-0.0005}
       />
       {active ? (
-        <Interior file={active} />
+        <Interior file={active} onInspect={onInspect} />
       ) : inside ? (
-        <Hallway
-          portals={portals}
-          folder={folder}
-          onPortal={perform}
-          region={region}
-        />
+        <>
+          {level < floors ? (
+            <group position={[0, level * 6, 0]}>
+              <Hallway
+                portals={portals}
+                folder={`${folder} · FLOOR ${level + 1}`}
+                onPortal={activate}
+                region={region}
+                level={level}
+              />
+            </group>
+          ) : (
+            <Roof
+              district={currentDistrict}
+              districts={districts}
+              level={floors}
+              onEnter={onFolderEnter}
+            />
+          )}
+          <Stairwell floors={floors} current={level} />
+          <group ref={lift}>
+            <Block p={[0, 0, 0]} s={[2.7, 0.22, 2]} c="#628d85" />
+            <Block
+              p={[0, 0.12, 0]}
+              s={[2.6, 0.03, 1.9]}
+              c="#b0ddd1"
+              glow={0.6}
+            />
+          </group>
+        </>
       ) : (
         <>
           <Block
@@ -759,11 +1207,13 @@ function Scene(props: Props) {
           ))}
           {districts.map((d, i) =>
             Math.abs(d.z - region) < 110 ? (
-              <Building
+              <TemporalBuilding
                 key={d.path}
                 district={d}
                 i={i}
                 onEnter={onFolderEnter}
+                status={statusFor(d)}
+                revision={timeRevision}
               />
             ) : null,
           )}
@@ -778,7 +1228,7 @@ function Scene(props: Props) {
             ))}
           {Array.from({ length: 14 }, (_, i) => (
             <Block
-              key={'skyline' + i}
+              key={i}
               p={[
                 (i % 2 ? 1 : -1) * (32 + (i % 3) * 6),
                 3 + (i % 4) * 2,
@@ -828,7 +1278,7 @@ export default function World(props: Props) {
     );
   return (
     <Canvas
-      shadows
+      shadows="percentage"
       dpr={[1, 1.7]}
       camera={{ position: [12, 20, 30], fov: 43, near: 0.1, far: 160 }}
       gl={{
