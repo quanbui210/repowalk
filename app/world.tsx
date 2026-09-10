@@ -2,6 +2,7 @@
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
+import { CityLife, Birch } from './city-life';
 import type { RepoFile } from './page';
 import {
   floorsFor,
@@ -143,8 +144,31 @@ function Building({
       <Block
         p={[0, h / 2, -0.6]}
         s={[7.6, h, 6.9]}
-        c={i % 3 === 0 ? '#4c5c60' : i % 3 === 1 ? '#5e6460' : '#414e56'}
+        c={
+          ['#a95f4d', '#c5a161', '#769592', '#bdac8e', '#73859c', '#b97d64'][
+            i % 6
+          ]
+        }
       />
+      {[-3.65, 3.65].map((x) => (
+        <Block
+          key={`corner-${x}`}
+          p={[x, h / 2, 2.9]}
+          s={[0.18, h, 0.14]}
+          c="#dfd6bb"
+        />
+      ))}
+      <Block p={[0, 4.65, 2.94]} s={[7.6, 0.18, 0.2]} c="#d8ccb3" />
+      <Block p={[0, h - 0.12, 2.94]} s={[7.9, 0.23, 0.3]} c="#dfd6bb" />
+      {[-1, 1].map((side) => (
+        <group
+          key={`roof-${side}`}
+          position={[side * 2, h + 0.7, -0.6]}
+          rotation={[0, 0, side * -0.32]}
+        >
+          <Block p={[0, 0, 0]} s={[4.3, 0.16, 7.45]} c="#3d535b" />
+        </group>
+      ))}
       <Block p={[0, h + 0.12, -0.6]} s={[8, 0.24, 7.3]} c="#68716c" />
       <Block p={[0, h + 0.34, -3.95]} s={[8, 0.5, 0.18]} c="#596561" />
       <Block p={[-3.9, h + 0.34, -0.6]} s={[0.18, 0.5, 7]} c="#56625e" />
@@ -161,7 +185,7 @@ function Building({
       <Block p={[1.8, h + 0.6, -2]} s={[0.6, 1, 0.6]} c="#35464c" />
       {[-2.7, 2.7].map((wx) => (
         <group key={wx}>
-          <Block p={[wx, 2.3, 2.92]} s={[1.4, 1.85, 0.12]} c="#202f37" />
+          <Block p={[wx, 2.3, 2.92]} s={[1.4, 1.85, 0.12]} c="#e2d7bc" />
           <Block
             p={[wx, 2.3, 3]}
             s={[1.1, 1.5, 0.03]}
@@ -224,13 +248,24 @@ function Building({
         (_, floor) => (
           <group key={'floor' + floor}>
             {[-2.7, -0.9, 0.9, 2.7].map((wx) => (
-              <Block
-                key={wx}
-                p={[wx, 5 + floor * 1.5, 2.95]}
-                s={[1.1, 0.75, 0.035]}
-                c={i % 2 ? '#a0bdb8' : '#d0ae7b'}
-                glow={0.45}
-              />
+              <group key={wx}>
+                <Block
+                  p={[wx, 5 + floor * 1.5, 2.95]}
+                  s={[1.18, 0.95, 0.1]}
+                  c="#ddd5bf"
+                />
+                <Block
+                  p={[wx, 5 + floor * 1.5, 3.01]}
+                  s={[0.96, 0.75, 0.035]}
+                  c={i % 2 ? '#90b1b4' : '#d5b883'}
+                  glow={0.3}
+                />
+                <Block
+                  p={[wx, 5 + floor * 1.5, 3.04]}
+                  s={[0.055, 0.8, 0.035]}
+                  c="#ded4bb"
+                />
+              </group>
             ))}
           </group>
         ),
@@ -466,73 +501,159 @@ function TemporalBuilding({
     </group>
   );
 }
+// Thin treads and diagonal stringers leave an open, readable stairwell.
+function Rail({
+  x,
+  y,
+  reverse = false,
+}: {
+  x: number;
+  y: number;
+  reverse?: boolean;
+}) {
+  return (
+    <group
+      position={[x, y + 4.05, 5]}
+      rotation={[reverse ? -Math.PI / 4 : Math.PI / 4, 0, 0]}
+    >
+      <Block p={[0, 0, 0]} s={[0.09, 0.09, Math.sqrt(72)]} c="#c2b49a" />
+    </group>
+  );
+}
+function FloorSurface({
+  x,
+  z,
+  width,
+  depth,
+}: {
+  x: number;
+  z: number;
+  width: number;
+  depth: number;
+}) {
+  // A repeated material gives large galleries detail without hundreds of meshes.
+  const texture = useMemo(() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 128;
+    const ctx = canvas.getContext('2d')!;
+    ctx.fillStyle = '#687875';
+    ctx.fillRect(0, 0, 128, 128);
+    for (let i = 0; i < 1800; i++) {
+      const value = 100 + ((i * 37) % 35);
+      ctx.fillStyle = `rgba(${value},${value + 9},${value + 7},0.16)`;
+      ctx.fillRect((i * 47) % 128, (i * 71) % 127, 2, 1);
+    }
+    ctx.strokeStyle = '#3d4c4b';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(0, 0, 128, 128);
+    ctx.strokeStyle = '#81908a';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(3, 3, 122, 122);
+    const map = new THREE.CanvasTexture(canvas);
+    map.wrapS = map.wrapT = THREE.RepeatWrapping;
+    map.repeat.set(width / 2, depth / 2);
+    map.colorSpace = THREE.SRGBColorSpace;
+    return map;
+  }, [width, depth]);
+  useEffect(() => () => texture.dispose(), [texture]);
+  return (
+    <mesh
+      position={[x, 0.006, z]}
+      rotation={[-Math.PI / 2, 0, 0]}
+      receiveShadow
+    >
+      <planeGeometry args={[width, depth]} />
+      <meshStandardMaterial map={texture} roughness={0.78} metalness={0.08} />
+    </mesh>
+  );
+}
 function Stairwell({ floors, current }: { floors: number; current: number }) {
   return (
     <group>
       {Array.from({ length: floors }, (_, flight) =>
-        Math.abs(flight - current) <= 1 ? (
+        flight <= current && flight >= current - 1 ? (
           <group key={flight}>
             {Array.from({ length: 24 }, (_, step) => {
-              const rise = (step + 1) * 0.25,
-                z =
-                  flight % 2 === 0
-                    ? 8 - (step + 0.5) * 0.25
-                    : 2 + (step + 0.5) * 0.25;
+              const rise = (step + 1) * 0.25;
+              const z =
+                flight % 2 === 0
+                  ? 8 - (step + 0.5) * 0.25
+                  : 2 + (step + 0.5) * 0.25;
               return (
                 <group key={step}>
                   <Block
-                    p={[8 + (flight % 2) * 3.8, flight * 6 + rise / 2, z]}
-                    s={[3.2, rise, 0.25]}
-                    c={step % 2 ? '#84918a' : '#74857d'}
+                    p={[8 + (flight % 2) * 3.8, flight * 6 + rise - 0.12, z]}
+                    s={[3.2, 0.24, 0.25]}
+                    c="#778b89"
                   />
                   <Block
-                    p={[8 + (flight % 2) * 3.8, flight * 6 + rise + 0.025, z]}
-                    s={[3.15, 0.025, 0.035]}
-                    c={amber}
-                    glow={0.9}
+                    p={[
+                      8 + (flight % 2) * 3.8,
+                      flight * 6 + rise + 0.008,
+                      z + (flight % 2 ? -0.105 : 0.105),
+                    ]}
+                    s={[3.08, 0.016, 0.04]}
+                    c="#d6bc8d"
+                    glow={0.35}
                   />
                 </group>
               );
             })}
-            {[6.35, 9.65].map((x) => (
-              <group key={x}>
-                {Array.from({ length: 7 }, (_, j) => {
-                  const z = 2 + j,
-                    height = flight * 6 + (flight % 2 === 0 ? 8 - z : z - 2);
-                  return (
+            {[6.4, 9.6].map((base) => {
+              const x = base + (flight % 2) * 3.8;
+              return (
+                <group key={base}>
+                  <Rail x={x} y={flight * 6} reverse={flight % 2 === 1} />
+                  <group
+                    position={[x, flight * 6 + 2.82, 5]}
+                    rotation={[flight % 2 ? -Math.PI / 4 : Math.PI / 4, 0, 0]}
+                  >
+                    <Block
+                      p={[0, 0, 0]}
+                      s={[0.14, 0.24, Math.sqrt(72)]}
+                      c="#30444b"
+                    />
+                  </group>
+                  {Array.from({ length: 7 }, (_, j) => (
                     <Block
                       key={j}
-                      p={[x + (flight % 2) * 3.8, height + 0.55, z]}
+                      p={[
+                        x,
+                        flight * 6 + (flight % 2 ? j : 6 - j) + 0.55,
+                        2 + j,
+                      ]}
                       s={[0.055, 1.1, 0.055]}
-                      c="#81988d"
+                      c="#9aa9a0"
                     />
-                  );
-                })}
-              </group>
-            ))}
+                  ))}
+                </group>
+              );
+            })}
           </group>
         ) : null,
       )}
       {Array.from({ length: floors + 1 }, (_, level) =>
-        Math.abs(level - current) <= 1 ? (
-          <group key={'landing' + level}>
-            <Block
-              p={[7, level * 6 - 0.12, 8.6]}
-              s={[13, 0.24, 1.2]}
-              c="#60746c"
-            />
-            <Block
-              p={[7, level * 6 - 0.12, 1.4]}
-              s={[13, 0.24, 1.2]}
-              c="#60746c"
-            />
+        level === current || level === current - 1 ? (
+          <group key={level} position={[0, level * 6, 0]}>
+            {[1.4, 8.6].map((z) => (
+              <group key={z}>
+                <Block p={[10.1, -0.15, z]} s={[7.4, 0.3, 1.2]} c="#4b6164" />
+                <FloorSurface x={10.1} z={z} width={7.4} depth={1.2} />
+                <Block
+                  p={[10.1, 0.018, z < 2 ? 0.85 : 9.15]}
+                  s={[7.4, 0.035, 0.07]}
+                  c={amber}
+                  glow={0.6}
+                />
+              </group>
+            ))}
             <Label
               text={
-                level === floors ? 'ROOFTOP ↑' : `FLOOR ${level + 1} · STAIRS ↑`
+                level === floors ? 'ROOFTOP' : `FLOOR ${level + 1} · STAIRS ↑`
               }
-              p={[8, level * 6 + 1.3, 9.15]}
-              width={3.5}
-              size={35}
+              p={[12, 1.6, 0.9]}
+              width={3}
+              size={38}
             />
           </group>
         ) : null,
@@ -554,24 +675,86 @@ function Roof({
   return (
     <>
       <group position={[0, level * 6, 0]}>
-        <Block p={[1.5, -0.2, -2]} s={[25, 0.4, 21]} c="#4e625f" />
-        <Block p={[-10.7, 0.55, -2]} s={[0.2, 1.1, 21]} c="#71847a" />
-        <Block p={[13.7, 0.55, -2]} s={[0.2, 1.1, 21]} c="#71847a" />
+        {/* A clean L-shaped roof keeps the entire stair shaft open. */}
+        <Block p={[-2.3, -0.2, -1.2]} s={[17.4, 0.4, 22.6]} c="#4e625f" />
+        <FloorSurface x={-2.3} z={-1.2} width={17.4} depth={22.6} />
+        <Block p={[10.2, -0.2, -5.65]} s={[7.6, 0.4, 13.7]} c="#4e625f" />
+        <FloorSurface x={10.2} z={-5.65} width={7.6} depth={13.7} />
+        <Block p={[-10.7, 0.55, -1.2]} s={[0.2, 1.1, 22.6]} c="#71847a" />
+        <Block p={[13.7, 0.55, -1.2]} s={[0.2, 1.1, 22.6]} c="#71847a" />
         <Block p={[0, 0.55, -12.4]} s={[21.5, 1.1, 0.2]} c="#71847a" />
-        <Block p={[0, 0.03, -3]} s={[7, 0.035, 7]} c="#687a70" />
+        <Block p={[-2.3, 0.55, 10]} s={[17.4, 1.1, 0.2]} c="#71847a" />
+
+        {/* Railings frame the stair opening and make its route obvious. */}
+        {[2, 3.5, 5, 6.5, 8].map((z) => (
+          <Block
+            key={`shaft-post-${z}`}
+            p={[6.3, 0.72, z]}
+            s={[0.07, 1.45, 0.07]}
+            c="#aab8ae"
+          />
+        ))}
+        <Block p={[6.3, 1.38, 5]} s={[0.1, 0.1, 6.15]} c="#c6b99e" />
+        <Block p={[6.3, 0.84, 5]} s={[0.07, 0.07, 6.15]} c="#7f928b" />
+        {[6.3, 8, 9.8, 11.6, 13.4].map((x) => (
+          <Block
+            key={`shaft-back-${x}`}
+            p={[x, 0.72, 1.15]}
+            s={[0.07, 1.45, 0.07]}
+            c="#aab8ae"
+          />
+        ))}
+        <Block p={[9.85, 1.38, 1.15]} s={[7.1, 0.1, 0.1]} c="#c6b99e" />
+        <Block p={[9.85, 0.84, 1.15]} s={[7.1, 0.07, 0.07]} c="#7f928b" />
+
+        {/* The observatory is a small raised deck rather than a floating slab. */}
+        <Block p={[-1.8, 0.09, -3.5]} s={[7.6, 0.18, 6.2]} c="#394d52" />
+        <Block p={[-1.8, 0.19, -3.5]} s={[7.15, 0.035, 5.75]} c="#71817d" />
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[-1.8, 0.22, -3.5]}>
+          <ringGeometry args={[1.65, 1.72, 64]} />
+          <meshBasicMaterial color={amber} transparent opacity={0.72} />
+        </mesh>
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[-1.8, 0.225, -3.5]}>
+          <ringGeometry args={[2.45, 2.49, 64]} />
+          <meshBasicMaterial color="#9dc8c1" transparent opacity={0.45} />
+        </mesh>
+        {[
+          [-5, -6],
+          [1.4, -6],
+          [-5, -1],
+          [1.4, -1],
+        ].map(([x, z]) => (
+          <group key={`${x}-${z}`}>
+            <Block p={[x, 0.48, z]} s={[0.13, 0.55, 0.13]} c="#637771" />
+            <Block p={[x, 0.78, z]} s={[0.2, 0.08, 0.2]} c={amber} glow={2.4} />
+          </group>
+        ))}
         <Label
           text={(district?.path || '') + ' / ROOFTOP OBSERVATORY'}
-          p={[0, 2, -10]}
-          width={12}
+          p={[0.5, 1.45, -12.25]}
+          width={10}
+          size={36}
         />
-        <Block p={[-7, 0.65, -5]} s={[2.3, 1.3, 2]} c="#374d55" />
-        <Block p={[-7, 1.4, -5]} s={[2.6, 0.12, 2.3]} c="#a4b9a7" />
-        <Label text="YOUR REPOSITORY, FROM ABOVE" p={[0, 1.7, -7]} width={7} />
+        <Label
+          text="REPOSITORY OVERLOOK"
+          p={[-1.8, 0.52, -0.38]}
+          width={5.2}
+          size={32}
+        />
+        <Block p={[-7.6, 0.4, -8.6]} s={[2.8, 0.8, 1.3]} c="#34494e" />
+        {[-8.25, -7.8, -7.35, -6.9].map((x) => (
+          <Block
+            key={x}
+            p={[x, 0.82, -8.6]}
+            s={[0.22, 0.035, 0.82]}
+            c="#91aaa2"
+          />
+        ))}
         <pointLight
-          position={[0, 3, -4]}
+          position={[-1.8, 3, -3.5]}
           color={amber}
-          intensity={25}
-          distance={17}
+          intensity={19}
+          distance={15}
         />
       </group>
       <group position={[-(district?.x || 0), 0, -(district?.z || 0)]}>
@@ -648,7 +831,36 @@ function Hallway({
   const end = Math.min(-6, ...portals.map((p) => p.z - 4));
   return (
     <group>
-      <Block p={[0, -0.15, (end + 9) / 2]} s={[16, 0.3, 9 - end]} c="#455653" />
+      <Block
+        p={[-0.8, -0.15, (end + 9.2) / 2]}
+        s={[14.4, 0.3, 9.2 - end]}
+        c="#455653"
+      />
+      <FloorSurface
+        x={-0.8}
+        z={(end + 9.2) / 2}
+        width={14.4}
+        depth={9.2 - end}
+      />
+      {[-1.72, 1.72].map((x) => (
+        <Block
+          key={x}
+          p={[x, 0.025, (end + 9) / 2]}
+          s={[0.045, 0.02, 9 - end]}
+          c="#c2a77f"
+          glow={0.25}
+        />
+      ))}
+      <Block
+        p={[-6.82, 0.15, (end + 9) / 2]}
+        s={[0.07, 0.3, 9 - end]}
+        c="#8b9990"
+      />
+      <Block
+        p={[6.82, 0.15, (end + 1) / 2]}
+        s={[0.07, 0.3, 1 - end]}
+        c="#8b9990"
+      />
       <Block
         p={[0, 0.02, (end + 9) / 2]}
         s={[3.2, 0.025, 9 - end]}
@@ -1143,8 +1355,8 @@ function Scene(props: Props) {
   };
   return (
     <>
-      <color attach="background" args={['#19252d']} />
-      <fog attach="fog" args={['#19252d', 35, 120]} />
+      <color attach="background" args={['#364d59']} />
+      <fog attach="fog" args={['#364d59', 45, 125]} />
       <ambientLight intensity={0.55} color="#a2bdc8" />
       <hemisphereLight args={['#a7c5d1', '#26363d', 1.4]} />
       <directionalLight
@@ -1201,9 +1413,32 @@ function Scene(props: Props) {
           />
           <Block
             p={[0, -0.04, (cityEnd + 22) / 2]}
-            s={[7, 0.12, 22 - cityEnd]}
+            s={[5.1, 0.12, 22 - cityEnd]}
             c="#35444a"
           />
+          <CityLife
+            end={cityEnd}
+            region={region}
+            paused={paused}
+            player={player}
+          />
+          {[-3.08, 3.08].map((x) => (
+            <group key={`pavement-${x}`}>
+              <Block
+                p={[x, 0.035, (cityEnd + 22) / 2]}
+                s={[1.05, 0.15, 22 - cityEnd]}
+                c="#8f9b94"
+              />
+            </group>
+          ))}
+          {[-2, -1.2, -0.4, 0.4, 1.2, 2].map((x) => (
+            <Block
+              key={`crossing-${x}`}
+              p={[x, 0.03, 10]}
+              s={[0.42, 0.025, 2.4]}
+              c="#dbd8be"
+            />
+          ))}
           {Array.from({ length: 70 }, (_, i) => region + 65 - i * 2)
             .filter((z) => z < 22 && z > cityEnd)
             .map((z) => (
@@ -1214,7 +1449,7 @@ function Scene(props: Props) {
                 c="#919685"
               />
             ))}
-          {[-3.5, 3.5].map((x) => (
+          {[-2.57, 2.57].map((x) => (
             <Block
               key={x}
               p={[x, 0.03, (cityEnd + 22) / 2]}
@@ -1237,11 +1472,10 @@ function Scene(props: Props) {
           {districts
             .filter((d) => Math.abs(d.z - region) < 55)
             .map((d) => (
-              <Lamp
-                key={d.path}
-                x={d.x > 0 ? 3.8 : -3.8}
-                z={d.z + 5 * d.scale}
-              />
+              <group key={d.path}>
+                <Lamp x={d.x > 0 ? 3.8 : -3.8} z={d.z + 5 * d.scale} />
+                <Birch x={d.x > 0 ? 5.1 : -5.1} z={d.z + 5 * d.scale + 1.2} />
+              </group>
             ))}
           {Array.from({ length: 14 }, (_, i) => (
             <Block

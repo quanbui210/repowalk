@@ -24,6 +24,8 @@ npm install
 npm run build
 ```
 
+The included `vercel.json` selects the Next.js preset and clears any stale `dist` output override. Vercel will use its normal Next.js output handling. You do not need to set an Output Directory in the dashboard.
+
 The production build uses `next build --webpack` to avoid current Turbopack CSS worker issues with this Tailwind v4 setup. No environment variables are required for public GitHub repository exploration. The app uses GitHub's public API, so heavy use can still hit GitHub's unauthenticated rate limits.
 
 For the original Sites/Cloudflare flow, use `npm run sites:dev`, `npm run sites:build`, and `npm run sites:start`.

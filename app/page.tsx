@@ -636,7 +636,11 @@ export default function Home() {
                   ? 'ROOFTOP OVERLOOK'
                   : `FLOOR ${floor + 1} / ${floorCount}`}
               </span>
-              <p>Walk upstairs on the right, or take the lift.</p>
+              <p>
+                {floor === floorCount
+                  ? 'Enjoy the view. Take the stairs or lift back down.'
+                  : 'Walk upstairs on the right, or take the lift.'}
+              </p>
               <div>
                 {Array.from({ length: floorCount + 1 }, (_, level) => (
                   <button
@@ -725,6 +729,11 @@ export default function Home() {
                 {near ? (
                   <>
                     Enter <strong>{near}</strong>
+                  </>
+                ) : inside && floor === floorCount ? (
+                  <>
+                    Take the stairs or choose a floor to{' '}
+                    <strong>continue exploring</strong>
                   </>
                 ) : (
                   <>
