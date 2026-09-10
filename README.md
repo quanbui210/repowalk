@@ -1,6 +1,6 @@
 # Repowalk
 
-A third-person 3D GitHub repository explorer built with React, React Three Fiber, Three.js, and Vinext.
+A third-person 3D GitHub repository explorer built with Next.js, React, React Three Fiber, and Three.js. The project also keeps Vinext/Sites commands for the existing Sites deployment.
 
 ## Run locally
 
@@ -12,6 +12,21 @@ npm run dev
 ```
 
 Open the local URL printed by the development server. The default playground contains clearly labeled sample source. Use **Explore a repository** to load actual source from a public GitHub repository's default branch.
+
+## Deploy to Vercel
+
+Import this repository into Vercel as a Next.js project. If your GitHub repository contains this app in a subfolder, set Vercel's **Root Directory** to that folder. Otherwise leave the root directory blank.
+
+Use the default install command and these build settings:
+
+```sh
+npm install
+npm run build
+```
+
+The production build uses `next build --webpack` to avoid current Turbopack CSS worker issues with this Tailwind v4 setup. No environment variables are required for public GitHub repository exploration. The app uses GitHub's public API, so heavy use can still hit GitHub's unauthenticated rate limits.
+
+For the original Sites/Cloudflare flow, use `npm run sites:dev`, `npm run sites:build`, and `npm run sites:start`.
 
 ## Controls
 
