@@ -637,9 +637,9 @@ function Hallway({
   folder,
   onPortal,
   region,
-  level=0,
+  level = 0,
 }: {
-  level?:number;
+  level?: number;
   portals: Portal[];
   folder: string;
   onPortal: (p: Portal) => void;
@@ -735,7 +735,13 @@ function Hallway({
           </group>
         ))}
       <group position={[0, 0, 8]} rotation={[0, Math.PI, 0]}>
-        <Label text={level===0?"EXIT TO STREET · E":"STAIRS DOWN · LIFT TO STREET"} p={[0, 1.7, 0]} width={4} />
+        <Label
+          text={
+            level === 0 ? 'EXIT TO STREET · E' : 'STAIRS DOWN · LIFT TO STREET'
+          }
+          p={[0, 1.7, 0]}
+          width={4}
+        />
         <Block p={[0, 0.04, 0]} s={[4, 0.08, 1]} c="#8fa797" />
       </group>
       <pointLight
@@ -779,6 +785,10 @@ function Scene(props: Props) {
       z: base.z,
     }));
   }, [files, layoutFiles]);
+  const presentFolders = useMemo(
+    () => new Set(buildDistricts(files).map((d) => d.path)),
+    [files],
+  );
   const currentDistrict = districts.find((d) => d.path === folder),
     floors = floorsFor(currentDistrict);
   const allPortals = useMemo(
@@ -806,7 +816,8 @@ function Scene(props: Props) {
     positions = useRef(new Map<string, THREE.Vector3>()),
     previous = useRef('city'),
     lastReset = useRef(reset),
-    elevatorTarget = useRef<number | null>(null);
+    elevatorTarget = useRef<number | null>(null),
+    lastLiftRequest = useRef<Props['floorRequest']>(null);
   const { camera, gl } = useThree();
   const activePath = active?.path;
   const location = activePath
@@ -826,7 +837,8 @@ function Scene(props: Props) {
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
       if (
-        (e.target instanceof Element && e.target.closest('input,textarea,[role="slider"]')) ||
+        (e.target instanceof Element &&
+          e.target.closest('input,textarea,[role="slider"]')) ||
         paused
       )
         return;
@@ -903,7 +915,14 @@ function Scene(props: Props) {
     onNear('');
   }, [location, activePath, inside, onNear, reset]);
   useEffect(() => {
-    if (floorRequest && inside && !activePath && player.current) {
+    if (
+      floorRequest &&
+      floorRequest !== lastLiftRequest.current &&
+      inside &&
+      !activePath &&
+      player.current
+    ) {
+      lastLiftRequest.current = floorRequest;
       player.current.position.x = 2;
       player.current.position.z = 8.6;
       elevatorTarget.current =
@@ -1072,9 +1091,7 @@ function Scene(props: Props) {
       }
     } else
       for (const d of districts) {
-        const exists = files.some(
-          (f) => d.path === '.' || f.path.startsWith(d.path + '/'),
-        );
+        const exists = presentFolders.has(d.path);
         if (
           exists &&
           Math.hypot(p.position.x - d.x, p.position.z - (d.z + 3.8 * d.scale)) <

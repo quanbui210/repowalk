@@ -159,6 +159,7 @@ export default function Home() {
   const floorCount = floorsFor(districts.find((d) => d.path === folder));
   const portals = floorPortals(allPortals, floor, floorCount);
   const historyRequest = useRef(0);
+  const historyRetryIndex = useRef(0);
   const codePane = useRef<HTMLPreElement>(null);
   useEffect(() => {
     if (reading && symbol)
@@ -212,6 +213,7 @@ export default function Home() {
   }
   async function travelToCommit(index: number) {
     if (!commits[index]) return;
+    historyRetryIndex.current = index;
     setHistoryBusy(true);
     setHistoryError('');
     const id = ++historyRequest.current;
@@ -281,10 +283,12 @@ export default function Home() {
         if (controller.signal.aborted) return;
         const loaded = { ...data, loaded: true };
         setFiles((previous) =>
-          previous.map((f) => (f.path === activePath ? loaded : f)),
+          previous.map((f) =>
+            f.path === activePath ? { ...f, ...loaded } : f,
+          ),
         );
         setActive((current) =>
-          current?.path === activePath ? loaded : current,
+          current?.path === activePath ? { ...current, ...loaded } : current,
         );
       })
       .catch((error) => {
@@ -840,7 +844,16 @@ export default function Home() {
                   {historyError && (
                     <p className="error" role="alert">
                       {historyError}
-                      <button onClick={() => void openHistory()}> Retry</button>
+                      <button
+                        onClick={() =>
+                          void (commits.length
+                            ? travelToCommit(historyRetryIndex.current)
+                            : openHistory())
+                        }
+                      >
+                        {' '}
+                        Retry
+                      </button>
                     </p>
                   )}
                 </>
@@ -952,7 +965,11 @@ export default function Home() {
               </span>
               {active.analysis.mode === 'ast' ? (
                 <>
-                  <p>Walk up to a station and press E to inspect it.</p>
+                  <p>
+                    {active.analysis.constructs.length
+                      ? 'Walk up to a station and press E to inspect it.'
+                      : 'No functions or classes in this file. Open Read code to inspect its contents.'}
+                  </p>
                   {active.analysis.constructs.map((c) => (
                     <button key={c.id} onClick={() => inspectSymbol(c)}>
                       <span>{c.kind === 'class' ? '◇' : 'ƒ'}</span>
@@ -1083,6 +1100,21 @@ export default function Home() {
             Architecture you can walk through.
           </DialogDescription>
           <div className="guide">
+            <p>
+              Climb the stairs at the right of each lobby. Flights alternate
+              sides. Use the numbered lift buttons for a faster ride;{' '}
+              <kbd>R</kbd> on the lift panel selects the rooftop.
+            </p>
+            <p>
+              In JavaScript and TypeScript rooms, functions become workstations
+              and classes become towers. Walk near one and press <kbd>E</kbd> to
+              highlight its exact source lines.
+            </p>
+            <p>
+              Open the clock icon to travel through the latest 20 Git commits.
+              Green marks additions, purple marks edits, and red ghosts mark
+              removals relative to the snapshot you previously viewed.
+            </p>
             <p>
               <kbd>W A S D</kbd> or arrow keys to walk. Hold Shift to run.
             </p>

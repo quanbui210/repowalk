@@ -27,7 +27,15 @@ Open the local URL printed by the development server. The default playground con
 
 Each directory becomes a building in one connected street. Its footprint and height grow with the number of contained files. Entering a building reveals a hallway of file rooms and immediate subfolder wings. Intermediate directories are preserved, and nested wings can be entered recursively. Discovery is tracked for the current expedition. The source reader is read-only. The 3D wall displays the first 32 source lines; the reader includes the complete downloaded file.
 
-The GitHub importer maps up to 5,000 supported text files under 250 KB each, excluding dependency/build directories and lockfiles. The initial import loads the tree only; actual source is fetched when a room is entered and cached in the current expedition. A visible notice identifies truncated trees. Public GitHub API rate limits apply. A bounded five-minute in-memory cache reduces repeat requests. Private repositories, local-folder importing, issue tracker integration, AST-based code quality analysis, vertical stair/elevator navigation, and persistent expedition history are not implemented in this version.
+The GitHub importer maps up to 5,000 supported text files under 250 KB each, excluding dependency/build directories and lockfiles. The initial import loads the tree only; actual source is fetched when a room is entered and cached in the current expedition. A visible notice identifies truncated trees. Public GitHub API rate limits apply. A bounded five-minute in-memory cache reduces repeat requests. Private repositories, local-folder importing, issue tracker integration, coverage/issue-tracker analysis and persistent expedition history are not implemented in this version.
+
+## Vertical exploration, source structures, and Git history
+
+Folder buildings contain stacked file galleries, alternating walkable stair flights, a moving lift, and a rooftop overlooking the surrounding repository. The floor panel provides a quicker lift route; R selects the roof. File doors are distributed across gallery floors without omitting rooms.
+
+JavaScript and TypeScript source is parsed with Babel. Up to 150 functions, arrow functions, methods, and classes become interactive stations and towers. Height responds to source length, and color indicates classes or branch-heavy functions. E or a station click opens and highlights its exact source range. Other languages retain the complete source reader and clearly indicate that structural parsing is unavailable. The sample world includes predefined, source-aligned structures.
+
+The Time Machine loads the latest 20 actual commits from a public repository. Selecting a commit requests that exact SHA's tree and pins subsequent source requests to that SHA. Added buildings grow in, removed buildings fade into collapsed ghosts, and modified building windows change color. Existing building positions are anchored to the accumulated directory layout. Change counts compare against the previously viewed snapshot, not necessarily the selected commit's parent. Only supported source files in the imported manifest participate in these comparisons. History is unavailable in the synthetic playground.
 
 ## Validation
 
@@ -35,6 +43,8 @@ The GitHub importer maps up to 5,000 supported text files under 250 KB each, exc
 
 The original importer was checked against `jonschlinkert/is-number`. The updated importer returned all 124 supported files across 30 direct folders from `pmndrs/zustand` without sampling; source loading returned its actual `src/index.ts` contents. Invalid repository URLs and unsafe source paths return explicit errors.
 
-`node --experimental-strip-types --test tests/world-layout.test.mjs` verifies directory hierarchy, monotonic building sizes, complete file-room assignment for a 120-file folder, and nonoverlapping variable-size building footprints. Buildings and portals outside the nearby rendering region are omitted to reduce rendering load; they remain part of the walkable world.
+`node --experimental-strip-types --test tests/*.test.mjs` verifies directory hierarchy, monotonic building sizes, complete file-room assignment for a 120-file folder, and nonoverlapping variable-size building footprints. The exploration tests additionally check bidirectional stair traversal, rejection of impossible side entry, complete floor assignment, exact AST ranges, and blob-based snapshot changes. A live GitHub check loaded 20 Zustand commits, detected 20 modified files between two snapshots, and confirmed that `src/middleware/devtools.ts` returns different source at the two pinned revisions.
+
+Buildings and portals outside the nearby rendering region are omitted to reduce rendering load; they remain part of the walkable world.
 
 An optional, feature-detected WebMCP tool exposes file-room navigation. No compatible WebMCP validation context was available during implementation; that integration has not been runtime verified. Browser interaction and visual QA were not performed.
