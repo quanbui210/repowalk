@@ -3,6 +3,10 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { CityLife, Birch } from './city-life';
+import { movementVector } from '@/lib/traffic';
+import { InteriorAtmosphere, INTERIOR_THEMES } from './interior-atmosphere';
+import { VisibilityGuide } from './visibility-guide';
+import { LandmarkShell, LANDMARK_NAMES, CityParks } from './helsinki-district';
 import type { RepoFile } from './page';
 import {
   floorsFor,
@@ -15,6 +19,8 @@ import {
 } from '@/lib/exploration';
 import {
   buildDistricts,
+  crossStreets,
+  sidewalkSegments,
   buildPortals,
   type District,
   type Portal,
@@ -129,7 +135,8 @@ function Building({
   onEnter: (path: string) => void;
 }) {
   const { x, z, scale } = district;
-  const h = floorsFor(district) * 6 + 0.3;
+  const h =
+    floorsFor(district) * 6 * [0.9, 0.72, 0.66, 0.64, 1.05, 0.85][i % 6] + 0.3;
   const accent =
     status === 'added'
       ? '#92dfb1'
@@ -138,6 +145,60 @@ function Building({
         : status === 'removed'
           ? '#dc8c8c'
           : amber;
+  const kind = i % LANDMARK_NAMES.length;
+  if (kind !== 5)
+    return (
+      <group position={[x, 0, z]} scale={[scale, 1, scale]}>
+        <LandmarkShell kind={kind} h={h}>
+          <Block p={[0, 1.5, 3.02]} s={[2.25, 3, 0.2]} c="#1b3039" />
+          <mesh
+            position={[0, 1.48, 3.18]}
+            onClick={(e) => {
+              e.stopPropagation();
+              onEnter(district.path);
+            }}
+          >
+            <boxGeometry args={[1.9, 2.9, 0.13]} />
+            <meshStandardMaterial color="#2b4e59" />
+          </mesh>
+          {[-1.06, 1.06].map((x) => (
+            <Block
+              key={x}
+              p={[x, 1.5, 3.26]}
+              s={[0.075, 3, 0.07]}
+              c={accent}
+              glow={1.5}
+            />
+          ))}
+          <Block
+            p={[0, 3.02, 3.26]}
+            s={[2.2, 0.07, 0.07]}
+            c={accent}
+            glow={1.5}
+          />
+          <Block p={[0.65, 1.4, 3.29]} s={[0.065, 0.32, 0.08]} c={accent} />
+          <Label
+            text={district.path + '/'}
+            p={[0, 3.63, 3.3]}
+            width={5.7}
+            size={43}
+          />
+          <Label
+            text={`${LANDMARK_NAMES[kind]} · ${district.count} FILES`}
+            p={[0, 4.25, 3.3]}
+            width={5.7}
+            size={32}
+          />
+          <Block p={[0, 0.12, 3.6]} s={[2.8, 0.24, 1.1]} c="#a1a697" />
+          <pointLight
+            position={[0, 2.5, 4.1]}
+            color={accent}
+            intensity={17}
+            distance={7}
+          />
+        </LandmarkShell>
+      </group>
+    );
   return (
     <group position={[x, 0, z]} scale={[scale, 1, scale]}>
       <Block p={[0, 0.15, 0]} s={[9, 0.3, 8.8]} c="#526064" />
@@ -299,8 +360,12 @@ function Building({
 function Interior({
   file,
   onInspect,
+  kind = 0,
+  paused = false,
 }: {
   file: RepoFile;
+  kind?: number;
+  paused?: boolean;
   onInspect: (symbol: CodeConstruct) => void;
 }) {
   const constructs = file.analysis?.constructs || [],
@@ -331,17 +396,22 @@ function Interior({
   useEffect(() => () => texture.dispose(), [texture]);
   return (
     <group>
+      <InteriorAtmosphere kind={kind} depth={depth} room paused={paused} />
       <Block
         p={[0, -0.2, (8 - depth) / 2]}
         s={[22, 0.4, depth + 8]}
-        c="#384b50"
+        c={INTERIOR_THEMES[kind].floor}
       />
       <Block
         p={[0, 0.025, (8 - depth) / 2]}
         s={[2.2, 0.035, depth + 8]}
         c="#657269"
       />
-      <Block p={[0, 3.2, -depth]} s={[22, 6.4, 0.45]} c="#273d49" />
+      <Block
+        p={[0, 3.2, -depth]}
+        s={[22, 6.4, 0.45]}
+        c={INTERIOR_THEMES[kind].wall}
+      />
       <Block
         p={[-11, 2, (8 - depth) / 2]}
         s={[0.4, 4, depth + 8]}
@@ -349,7 +419,7 @@ function Interior({
       />
       <Block p={[11, 2, (8 - depth) / 2]} s={[0.4, 4, depth + 8]} c="#34494e" />
       <Label
-        text={file.path + ' / SOURCE ARCHITECTURE'}
+        text={file.path + ' / ' + INTERIOR_THEMES[kind].name}
         p={[0, 5.8, -depth + 0.3]}
         width={15}
         size={36}
@@ -371,7 +441,11 @@ function Interior({
               : '#8ad2ca';
         return (
           <group key={symbol.id} position={[x, 0, z]}>
-            <Block p={[0, 0.15, 0]} s={[3.2, 0.3, 3]} c="#2a3942" />
+            <Block
+              p={[0, 0.3, 0]}
+              s={[3.2, 0.6, 3]}
+              c={kind === 1 ? '#d6ccba' : INTERIOR_THEMES[kind].wall}
+            />
             <mesh
               position={[0, height / 2 + 0.3, 0]}
               onClick={(e) => {
@@ -379,33 +453,43 @@ function Interior({
                 onInspect(symbol);
               }}
             >
-              <boxGeometry
-                args={[symbol.kind === 'class' ? 1.8 : 2.5, height, 1.6]}
-              />
+              {kind === 1 || kind === 5 ? (
+                <torusKnotGeometry args={[0.75, 0.2, 48, 8, 2 + (i % 2), 3]} />
+              ) : (
+                <boxGeometry
+                  args={[symbol.kind === 'class' ? 1.8 : 2.5, height, 1.6]}
+                />
+              )}
               <meshStandardMaterial
-                color="#314852"
+                color={
+                  kind === 1 || kind === 5 ? color : INTERIOR_THEMES[kind].wall
+                }
                 metalness={0.4}
                 roughness={0.4}
               />
             </mesh>
-            <Block
-              p={[0, height + 0.35, 0]}
-              s={[2.9, 0.1, 2.3]}
-              c={color}
-              glow={1.5}
-            />
-            {Array.from(
-              { length: Math.min(8, Math.ceil(symbol.lines / 8)) },
-              (_, j) => (
-                <Block
-                  key={j}
-                  p={[0, 0.6 + j * 0.32, 0.84]}
-                  s={[1.7 - 0.08 * (j % 3), 0.06, 0.02]}
-                  c={color}
-                  glow={1.4}
-                />
-              ),
+            {kind !== 1 && kind !== 5 && (
+              <Block
+                p={[0, height + 0.35, 0]}
+                s={[2.9, 0.1, 2.3]}
+                c={color}
+                glow={1.5}
+              />
             )}
+            {kind !== 1 &&
+              kind !== 5 &&
+              Array.from(
+                { length: Math.min(8, Math.ceil(symbol.lines / 8)) },
+                (_, j) => (
+                  <Block
+                    key={j}
+                    p={[0, 0.6 + j * 0.32, 0.84]}
+                    s={[1.7 - 0.08 * (j % 3), 0.06, 0.02]}
+                    c={color}
+                    glow={1.4}
+                  />
+                ),
+              )}
             <Label
               text={symbol.name}
               p={[0, height + 0.92, 1.2]}
@@ -430,6 +514,12 @@ function Interior({
           </group>
         );
       })}
+      <Label
+        text="KAHVILA · CLICK THE CUP FOR COFFEE"
+        p={[5, 2.5, 5]}
+        width={5}
+        size={28}
+      />
       <Label
         text={
           constructs.length
@@ -491,7 +581,10 @@ function TemporalBuilding({
     }
   });
   return (
-    <group ref={group}>
+    <group
+      ref={group}
+      userData={{ occludingBuilding: true, removed: status === 'removed' }}
+    >
       <Building
         district={district}
         i={i}
@@ -764,8 +857,13 @@ function Roof({
               d.path !== district?.path &&
               Math.abs(d.z - (district?.z || 0)) < 100,
           )
-          .map((d, i) => (
-            <Building key={d.path} district={d} i={i} onEnter={onEnter} />
+          .map((d) => (
+            <Building
+              key={d.path}
+              district={d}
+              i={districts.findIndex((item) => item.path === d.path)}
+              onEnter={onEnter}
+            />
           ))}
         <Block
           p={[0, -0.4, (district?.z || 0) - 20]}
@@ -821,7 +919,11 @@ function Hallway({
   onPortal,
   region,
   level = 0,
+  kind = 0,
+  paused = false,
 }: {
+  kind?: number;
+  paused?: boolean;
   level?: number;
   portals: Portal[];
   folder: string;
@@ -831,10 +933,11 @@ function Hallway({
   const end = Math.min(-6, ...portals.map((p) => p.z - 4));
   return (
     <group>
+      <InteriorAtmosphere kind={kind} depth={Math.abs(end)} paused={paused} />
       <Block
         p={[-0.8, -0.15, (end + 9.2) / 2]}
         s={[14.4, 0.3, 9.2 - end]}
-        c="#455653"
+        c={INTERIOR_THEMES[kind].floor}
       />
       <FloorSurface
         x={-0.8}
@@ -870,7 +973,7 @@ function Hallway({
       <Block p={[7, 1.7, (end + 1) / 2]} s={[0.3, 3.4, 1 - end]} c="#34464c" />
       <Block p={[0, 2, end]} s={[14, 4, 0.3]} c="#34464c" />
       <Label
-        text={folder + ' /  FILE GALLERY'}
+        text={folder + ' / ' + INTERIOR_THEMES[kind].name}
         p={[0, 3.5, end + 0.2]}
         width={10}
       />
@@ -1019,8 +1122,8 @@ function Scene(props: Props) {
     lift = useRef<THREE.Group>(null),
     moving = useRef(false),
     keys = useRef(new Set<string>()),
-    angle = useRef(0.28),
-    zoom = useRef(25),
+    angle = useRef(0),
+    zoom = useRef(36),
     drag = useRef<number | null>(null),
     lastNear = useRef(''),
     nearest = useRef<Interaction | null>(null),
@@ -1175,7 +1278,7 @@ function Scene(props: Props) {
       el.removeEventListener('wheel', wheel);
     };
   }, [gl]);
-  const cityEnd = (districts.at(-1)?.z || 0) - 15,
+  const cityEnd = Math.min(0, ...districts.map((d) => d.z - 5 * d.scale)) - 18,
     hallEnd = (portals.at(-1)?.z || 0) - 2,
     depth = roomDepth(active?.analysis?.constructs.length || 0);
   useFrame((_, delta) => {
@@ -1202,15 +1305,15 @@ function Scene(props: Props) {
     }
     moving.current = !!(dx || dz);
     if (moving.current) {
-      const length = Math.hypot(dx, dz);
-      dx /= length;
-      dz /= length;
+      // Use the rendered camera bearing, not its still-interpolating orbit target.
+      const yaw = Math.atan2(
+        camera.position.x - target.current.x,
+        camera.position.z - target.current.z,
+      );
+      const direction = movementVector(dx, dz, yaw);
       const speed = (keys.current.has('shift') ? 8 : 4.4) * dt,
-        mx =
-          (dx * Math.cos(angle.current) + dz * Math.sin(angle.current)) * speed,
-        mz =
-          (-dx * Math.sin(angle.current) + dz * Math.cos(angle.current)) *
-          speed;
+        mx = direction.x * speed,
+        mz = direction.z * speed;
       const blocked = (x: number, z: number) =>
         activePath
           ? (active?.analysis?.constructs || []).some((_, i) => {
@@ -1231,8 +1334,18 @@ function Scene(props: Props) {
             ? level === floors
               ? -10
               : -6.5
-            : -35,
-        maxX = activePath ? 10 : inside ? 13.4 : 35,
+            : -Math.max(
+                40,
+                ...districts.map((d) => Math.abs(d.x) + 5 * d.scale + 10),
+              ),
+        maxX = activePath
+          ? 10
+          : inside
+            ? 13.4
+            : Math.max(
+                40,
+                ...districts.map((d) => Math.abs(d.x) + 5 * d.scale + 10),
+              ),
         minZ = activePath
           ? -depth + 1
           : inside
@@ -1336,7 +1449,10 @@ function Scene(props: Props) {
       new THREE.Vector3(p.position.x, p.position.y + 1, p.position.z - 3),
       1 - Math.exp(-4 * dt),
     );
-    const dist = inside || activePath ? zoom.current * 0.62 : zoom.current;
+    const dist =
+      inside || activePath
+        ? Math.max(14, zoom.current - 11) * 0.62
+        : zoom.current;
     const desired = new THREE.Vector3(
       target.current.x + Math.sin(angle.current) * dist,
       target.current.y + dist * 0.79,
@@ -1372,7 +1488,17 @@ function Scene(props: Props) {
         shadow-bias={-0.0005}
       />
       {active ? (
-        <Interior file={active} onInspect={onInspect} />
+        <Interior
+          file={active}
+          onInspect={onInspect}
+          kind={
+            Math.max(
+              0,
+              districts.findIndex((d) => d.path === folder),
+            ) % 6
+          }
+          paused={paused}
+        />
       ) : inside ? (
         <>
           {level < floors ? (
@@ -1383,6 +1509,13 @@ function Scene(props: Props) {
                 onPortal={activate}
                 region={region}
                 level={level}
+                kind={
+                  Math.max(
+                    0,
+                    districts.findIndex((d) => d.path === folder),
+                  ) % 6
+                }
+                paused={paused}
               />
             </group>
           ) : (
@@ -1408,7 +1541,14 @@ function Scene(props: Props) {
         <>
           <Block
             p={[0, -0.35, (cityEnd + 22) / 2]}
-            s={[160, 0.5, 22 - cityEnd]}
+            s={[
+              Math.max(
+                80,
+                ...districts.map((d) => Math.abs(d.x) * 2 + d.scale * 12 + 20),
+              ),
+              0.5,
+              22 - cityEnd,
+            ]}
             c="#293b43"
           />
           <Block
@@ -1416,19 +1556,145 @@ function Scene(props: Props) {
             s={[5.1, 0.12, 22 - cityEnd]}
             c="#35444a"
           />
+          {crossStreets(districts.length).map((z) => (
+            <group key={`intersection-${z}`}>
+              <Block p={[0, 0.05, z]} s={[76, 0.12, 5.1]} c="#35444a" />
+              {Array.from({ length: 25 }, (_, i) => -36 + i * 3)
+                .filter((x) => Math.abs(x) > 4)
+                .map((x) => (
+                  <Block
+                    key={x}
+                    p={[x, 0.12, z]}
+                    s={[1.1, 0.02, 0.09]}
+                    c="#d4c7a4"
+                  />
+                ))}
+              {[-4.5, 4.5].flatMap((x) =>
+                [-1.8, -0.9, 0, 0.9, 1.8].map((dz) => (
+                  <Block
+                    key={`${x}-${dz}`}
+                    p={[x, 0.125, z + dz]}
+                    s={[2, 0.02, 0.4]}
+                    c="#ede4cd"
+                  />
+                )),
+              )}
+            </group>
+          ))}
+          {districts
+            .filter((d) => Math.abs(d.z - region) < 100)
+            .map((d, index) => (
+              <group key={`side-street-${d.path}`}>
+                <Block
+                  p={[d.x / 2, -0.025, d.z + d.scale * 4.5 + 2]}
+                  s={[Math.abs(d.x), 0.07, 4]}
+                  c="#88968c"
+                />
+                <Block
+                  p={[d.x / 2, 0.025, d.z + d.scale * 4.5 + 4.2]}
+                  s={[Math.abs(d.x), 0.07, 0.5]}
+                  c="#92988b"
+                />
+                {index === 0 && d.path === districts[0]?.path && (
+                  <>
+                    <Block
+                      p={[d.x, 0.025, -0.5]}
+                      s={[16, 0.07, 8]}
+                      c="#9a9b8d"
+                    />
+                    <Label
+                      text="SENATE SQUARE · REPOSITORY COMMONS"
+                      p={[d.x, 0.7, 3]}
+                      width={10}
+                      size={34}
+                    />
+                    <group position={[d.x, 0, -0.5]}>
+                      <mesh position={[0, 0.2, 0]} receiveShadow>
+                        <cylinderGeometry args={[1.6, 1.8, 0.4, 32]} />
+                        <meshStandardMaterial color="#b9b7a2" />
+                      </mesh>
+                      <mesh position={[0, 0.43, 0]}>
+                        <cylinderGeometry args={[1.35, 1.35, 0.06, 32]} />
+                        <meshStandardMaterial
+                          color="#79aaa6"
+                          metalness={0.5}
+                          roughness={0.2}
+                        />
+                      </mesh>
+                      <mesh position={[0, 1.1, 0]}>
+                        <torusGeometry args={[0.7, 0.1, 12, 32]} />
+                        <meshStandardMaterial
+                          color="#d4b978"
+                          metalness={0.7}
+                          roughness={0.25}
+                        />
+                      </mesh>
+                      {[-5, 5].map((x) => (
+                        <group key={x} position={[x, 0, 0]}>
+                          <Block
+                            p={[0, 0.4, 0]}
+                            s={[0.15, 0.8, 0.15]}
+                            c="#45564f"
+                          />
+                          <mesh position={[0, 0.9, 0]}>
+                            <cylinderGeometry args={[0.8, 0.8, 0.12, 16]} />
+                            <meshStandardMaterial color="#c5a57b" />
+                          </mesh>
+                          <Block
+                            p={[0, 1.7, 0]}
+                            s={[0.055, 1.6, 0.055]}
+                            c="#ded2b4"
+                          />
+                          <mesh position={[0, 2.5, 0]}>
+                            <coneGeometry args={[1.25, 0.45, 8]} />
+                            <meshStandardMaterial
+                              color={x < 0 ? '#e1bb79' : '#82aaa1'}
+                            />
+                          </mesh>
+                          {[-1.1, 1.1].map((z) => (
+                            <Block
+                              key={z}
+                              p={[0, 0.45, z]}
+                              s={[0.6, 0.15, 0.6]}
+                              c="#ae835e"
+                            />
+                          ))}
+                        </group>
+                      ))}
+                      <Lamp x={-7} z={2} />
+                      <Lamp x={7} z={2} />
+                    </group>
+                  </>
+                )}
+              </group>
+            ))}
           <CityLife
+            junctions={crossStreets(districts.length)}
             end={cityEnd}
             region={region}
             paused={paused}
             player={player}
           />
+          {region > -80 && (
+            <CityParks
+              paused={paused}
+              label={(text, p, width) => (
+                <Label text={text} p={p} width={width} size={34} />
+              )}
+            />
+          )}
           {[-3.08, 3.08].map((x) => (
             <group key={`pavement-${x}`}>
-              <Block
-                p={[x, 0.035, (cityEnd + 22) / 2]}
-                s={[1.05, 0.15, 22 - cityEnd]}
-                c="#8f9b94"
-              />
+              {sidewalkSegments(cityEnd, crossStreets(districts.length)).map(
+                (segment) => (
+                  <Block
+                    key={segment.z}
+                    p={[x, 0.035, segment.z]}
+                    s={[1.05, 0.15, segment.length]}
+                    c="#8f9b94"
+                  />
+                ),
+              )}
             </group>
           ))}
           {[-2, -1.2, -0.4, 0.4, 1.2, 2].map((x) => (
@@ -1440,7 +1706,14 @@ function Scene(props: Props) {
             />
           ))}
           {Array.from({ length: 70 }, (_, i) => region + 65 - i * 2)
-            .filter((z) => z < 22 && z > cityEnd)
+            .filter(
+              (z) =>
+                z < 22 &&
+                z > cityEnd &&
+                crossStreets(districts.length).every(
+                  (j) => Math.abs(z - j) > 3,
+                ),
+            )
             .map((z) => (
               <Block
                 key={z}
@@ -1449,14 +1722,18 @@ function Scene(props: Props) {
                 c="#919685"
               />
             ))}
-          {[-2.57, 2.57].map((x) => (
-            <Block
-              key={x}
-              p={[x, 0.03, (cityEnd + 22) / 2]}
-              s={[0.15, 0.15, 22 - cityEnd]}
-              c="#77847e"
-            />
-          ))}
+          {[-2.57, 2.57].flatMap((x) =>
+            sidewalkSegments(cityEnd, crossStreets(districts.length)).map(
+              (segment) => (
+                <Block
+                  key={`${x}-${segment.z}`}
+                  p={[x, 0.03, segment.z]}
+                  s={[0.15, 0.15, segment.length]}
+                  c="#77847e"
+                />
+              ),
+            ),
+          )}
           {districts.map((d, i) =>
             Math.abs(d.z - region) < 110 ? (
               <TemporalBuilding
@@ -1477,23 +1754,12 @@ function Scene(props: Props) {
                 <Birch x={d.x > 0 ? 5.1 : -5.1} z={d.z + 5 * d.scale + 1.2} />
               </group>
             ))}
-          {Array.from({ length: 14 }, (_, i) => (
-            <Block
-              key={i}
-              p={[
-                (i % 2 ? 1 : -1) * (32 + (i % 3) * 6),
-                3 + (i % 4) * 2,
-                region + 15 - Math.floor(i / 2) * 15,
-              ]}
-              s={[7, 6 + (i % 4) * 4, 9]}
-              c="#2f424b"
-            />
-          ))}
         </>
       )}
       <group ref={player} position={[0, 0, 12]}>
         <Player moving={moving} />
       </group>
+      <VisibilityGuide player={player} enabled={!inside && !active} />
     </>
   );
 }
@@ -1531,7 +1797,7 @@ export default function World(props: Props) {
     <Canvas
       shadows="percentage"
       dpr={[1, 1.7]}
-      camera={{ position: [12, 20, 30], fov: 43, near: 0.1, far: 160 }}
+      camera={{ position: [0, 28.44, 48], fov: 43, near: 0.1, far: 160 }}
       gl={{
         antialias: true,
         alpha: false,

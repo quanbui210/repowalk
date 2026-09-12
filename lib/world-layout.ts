@@ -1,4 +1,23 @@
 export type FileEntry = { path: string };
+export const BLOCK_SPACING = 54;
+export const CROSS_STREET_Z = 7;
+export const ROAD_HALF_WIDTH = 2.55;
+export const crossStreets = (count: number) =>
+  Array.from(
+    { length: Math.ceil(count / 6) },
+    (_, i) => CROSS_STREET_Z - i * BLOCK_SPACING,
+  );
+export function sidewalkSegments(end: number, junctions: number[]) {
+  const segments: { z: number; length: number }[] = [];
+  let cursor = end;
+  for (const z of [...junctions].sort((a, b) => a - b)) {
+    if (z - 3 > cursor)
+      segments.push({ z: (cursor + z - 3) / 2, length: z - 3 - cursor });
+    cursor = Math.max(cursor, z + 3);
+  }
+  if (cursor < 22) segments.push({ z: (cursor + 22) / 2, length: 22 - cursor });
+  return segments;
+}
 export const directoryOf = (path: string) =>
   path.split('/').slice(0, -1).join('/') || '.';
 export type District = {
@@ -35,28 +54,25 @@ export function buildDistricts(files: FileEntry[]): District[] {
       childrenByParent.set(parent, children);
     }
   }
-  let z = 0;
+  // Bounded footprints keep even very large repositories walkable.
+  const cell = 15;
+  const addresses = [
+    [-0.8, -0.8],
+    [0.8, -0.8],
+    [1.8, -0.8],
+    [-1.8, -0.8],
+    [-0.8, -2.3],
+    [0.8, -2.3],
+  ];
   return entries.map(([path, counts], i) => {
-    const scale = 1 + Math.log2(1 + counts.count) * 0.14;
-    if (i > 0 && i % 2 === 0) {
-      const previousScale = Math.max(
-        ...entries
-          .slice(i - 2, i)
-          .map(([, group]) => 1 + Math.log2(1 + group.count) * 0.14),
-      );
-      const nextScale = Math.max(
-        ...entries
-          .slice(i, i + 2)
-          .map(([, group]) => 1 + Math.log2(1 + group.count) * 0.14),
-      );
-      z -= (previousScale + nextScale) * 4.5 + 5;
-    }
+    const scale = 0.95 + 0.5 * (1 - Math.exp(-counts.count / 45));
+    const address = addresses[i % addresses.length];
     return {
       path,
       ...counts,
       children: childrenByParent.get(path) || [],
-      x: (i % 2 ? 1 : -1) * (4 + 3.8 * scale),
-      z,
+      x: address[0] * cell,
+      z: address[1] * cell - Math.floor(i / addresses.length) * BLOCK_SPACING,
       scale,
       height: 4.3 + Math.log2(1 + counts.count) * 1.25,
     };

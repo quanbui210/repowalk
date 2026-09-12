@@ -3,6 +3,13 @@
 import { useRef, type RefObject } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
+import {
+  HelsinkiTransit,
+  followingVehicle,
+  type TrafficState,
+  type RoadVehicle,
+} from './helsinki-transit';
+import { approachSignal, signalAt } from '@/lib/traffic';
 
 function Part({
   p,
@@ -34,37 +41,84 @@ function Car({
   region,
   paused,
   player,
+  time,
+  traffic,
+  junctions,
 }: {
   index: number;
   end: number;
   region: number;
   paused: boolean;
   player: RefObject<THREE.Group | null>;
+  time: RefObject<number>;
+  traffic: TrafficState;
+  junctions: number[];
 }) {
   const group = useRef<THREE.Group>(null);
   const z = useRef(16 - index * 19);
   const direction = index % 2 ? 1 : -1;
-  const x = direction * 1.45;
+  const crossing = index >= 4;
+  const x = direction * (crossing ? 1.45 : -1.45);
   useFrame((_, delta) => {
     if (!group.current || paused) return;
     const p = player.current?.position;
-    const ahead = p ? (p.z - z.current) * direction : 100;
+    const ahead = p ? ((crossing ? p.x : p.z) - z.current) * direction : 100;
     // Cars give the explorer space to cross the street.
-    const yielding = p && Math.abs(p.x - x) < 1.7 && ahead > -1 && ahead < 5;
-    if (!yielding)
+    const yielding =
+      p &&
+      Math.abs((crossing ? p.z - 7 : p.x) - x) < 1.7 &&
+      ahead > -1 &&
+      ahead < 5;
+    const stopped = (crossing ? [0] : junctions).some((junction) =>
+      approachSignal(
+        z.current,
+        direction,
+        junction,
+        1.4,
+        signalAt(time.current, crossing),
+      ),
+    );
+    const lane = crossing ? 7 + x : x;
+    const following = followingVehicle(
+      traffic,
+      `car-${index}`,
+      crossing ? 'x' : 'z',
+      lane,
+      z.current,
+      direction,
+      1.4,
+    );
+    if (!yielding && !stopped && !following)
       z.current += direction * Math.min(delta, 0.05) * (3 + index * 0.24);
-    const low = Math.max(end + 3, region - 65),
-      high = Math.min(20, region + 55);
+    const low = crossing ? -36 : Math.max(end + 3, region - 65),
+      high = crossing ? 36 : Math.min(20, region + 55);
     if (z.current < low) z.current = high;
     if (z.current > high) z.current = low;
-    group.current.position.set(x, 0.1, z.current);
+    traffic.current.set(`car-${index}`, {
+      axis: crossing ? 'x' : 'z',
+      lane,
+      position: z.current,
+      half: 1.4,
+    });
+    group.current.position.set(
+      crossing ? z.current : x,
+      0.16,
+      crossing ? 7 + x : z.current,
+    );
   });
   return (
-    <group ref={group} rotation={[0, direction > 0 ? 0 : Math.PI, 0]}>
+    <group
+      ref={group}
+      rotation={[
+        0,
+        (direction > 0 ? 0 : Math.PI) + (crossing ? Math.PI / 2 : 0),
+        0,
+      ]}
+    >
       <Part
         p={[0, 0.5, 0]}
         s={[1.45, 0.55, 2.8]}
-        color={['#b15b45', '#d8bd70', '#679692', '#6c819e'][index]}
+        color={['#b15b45', '#d8bd70', '#679692', '#6c819e'][index % 4]}
       />
       <Part p={[0, 0.98, -0.15]} s={[1.22, 0.62, 1.5]} color="#d1d9ce" />
       <Part p={[0, 1.02, 0.615]} s={[1.06, 0.4, 0.035]} color="#294c5b" />
@@ -244,16 +298,27 @@ export function CityLife({
   region,
   paused,
   player,
+  junctions,
 }: {
   end: number;
   region: number;
   paused: boolean;
   player: RefObject<THREE.Group | null>;
+  junctions: number[];
 }) {
+  const time = useRef(0);
+  const traffic = useRef(new Map<string, RoadVehicle>());
+  useFrame((_, dt) => {
+    if (!paused) time.current += Math.min(dt, 0.04);
+  });
   return (
     <group>
-      {[0, 1, 2, 3].map((index) => (
-        <Car key={`car-${index}`} {...{ index, end, region, paused, player }} />
+      <HelsinkiTransit {...{ time, traffic, player, junctions, end, paused }} />
+      {[0, 1, 2, 3, 4, 5].map((index) => (
+        <Car
+          key={`car-${index}`}
+          {...{ index, end, region, paused, player, time, traffic, junctions }}
+        />
       ))}
       {[0, 1, 2, 3, 4, 5].map((index) => (
         <Citizen key={`citizen-${index}`} {...{ index, end, region, paused }} />

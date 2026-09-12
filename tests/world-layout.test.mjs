@@ -4,6 +4,9 @@ import {
   buildDistricts,
   buildPortals,
   directoryOf,
+  crossStreets,
+  ROAD_HALF_WIDTH,
+  sidewalkSegments,
 } from '../lib/world-layout.ts';
 
 test('every directory is a building, including intermediate directories', () => {
@@ -62,7 +65,7 @@ test('hallways have one portal per direct file and one per immediate subfolder',
   );
 });
 
-test('variable building footprints keep the central street and each row clear', () => {
+test('civic blocks preserve road clearance and never overlap across neighbourhoods', () => {
   const files = Array.from({ length: 25 }, (_, i) =>
     Array.from({ length: 1 + i * 7 }, (_, j) => ({
       path: `folder-${i}/file-${j}.ts`,
@@ -70,11 +73,36 @@ test('variable building footprints keep the central street and each row clear', 
   ).flat();
   const districts = buildDistricts(files);
   for (const d of districts) assert.ok(Math.abs(d.x) - 3.8 * d.scale >= 3.999);
-  for (let i = 2; i < districts.length; i++) {
-    const current = districts[i],
-      previous = districts[i - 2];
-    assert.ok(
-      current.z + 4.2 * current.scale < previous.z - 4.05 * previous.scale,
-    );
+  for (const d of districts) assert.ok(d.scale <= 1.45);
+  for (const d of districts)
+    for (const z of crossStreets(districts.length)) {
+      assert.ok(
+        Math.abs(d.z - z) > 4.5 * d.scale + ROAD_HALF_WIDTH + 1,
+        `${d.path} overlaps road at ${z}`,
+      );
+    }
+  for (const s of sidewalkSegments(-260, crossStreets(districts.length)))
+    for (const z of crossStreets(districts.length)) {
+      assert.ok(Math.abs(s.z - z) >= s.length / 2 + 3 - 1e-8);
+    }
+  const centre = districts.slice(0, 6);
+  assert.ok(
+    Math.max(...centre.map((d) => d.x)) - Math.min(...centre.map((d) => d.x)) <=
+      54,
+  );
+  assert.ok(
+    Math.max(...centre.map((d) => d.z)) - Math.min(...centre.map((d) => d.z)) <=
+      23,
+  );
+  assert.ok(new Set(districts.map((d) => d.x)).size >= 4);
+  for (let i = 0; i < districts.length; i++) {
+    for (let j = i + 1; j < districts.length; j++) {
+      const a = districts[i],
+        b = districts[j];
+      assert.ok(
+        Math.abs(a.x - b.x) > 4.5 * (a.scale + b.scale) ||
+          Math.abs(a.z - b.z) > 4.5 * (a.scale + b.scale),
+      );
+    }
   }
 });

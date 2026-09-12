@@ -1,0 +1,4 @@
+HSL logo: https://github.com/HSLdevcom/dev.hsl.fi/blob/master/logo.png
+Downloaded from HSL's official developer community repository.
+HSL/HRT branding belongs to Helsinki Region Transport.
+Vehicle models and routes in this game are stylized fictional simulations, not live HSL services.

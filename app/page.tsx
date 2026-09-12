@@ -892,8 +892,14 @@ export default function Home() {
                       : enter(files.find((file) => file.path === f.path)!)
                   }
                   style={{
-                    left: `${i % 2 ? 59 : 13}%`,
-                    top: `${15 + Math.floor(i / 2) * 24}%`,
+                    left: inside
+                      ? `${i % 2 ? 59 : 13}%`
+                      : `${45 + ((districts[i]?.x || 0) / Math.max(1, ...districts.map((d) => Math.abs(d.x)))) * 35}%`,
+                    top: inside
+                      ? `${15 + Math.floor(i / 2) * 24}%`
+                      : `${12 + (Math.abs(districts[i]?.z || 0) / Math.max(1, ...districts.map((d) => Math.abs(d.z)))) * 65}%`,
+                    width: inside ? undefined : '14%',
+                    height: inside ? undefined : '13%',
                   }}
                 >
                   {map ? f.path.split('/').pop() : ''}
