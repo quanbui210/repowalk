@@ -113,7 +113,15 @@ export function LandmarkShell({
               <Dome key={`${x}-${z}`} x={x} y={h - 0.15} z={z} radius={0.55} />
             )),
           )}
-          {[-2.7, -1.7, 1.7, 2.7].map((x) => (
+          {[0, 1, 2, 3].map((step) => (
+            <Box
+              key={`stair-${step}`}
+              p={[0, 0.045 + step * 0.035, 4.5 - step * 0.28]}
+              s={[7.6 - step * 0.25, 0.09 + step * 0.07, 0.32]}
+              c="#cecabc"
+            />
+          ))}
+          {[-2.9, -2.1, -1.3, 1.3, 2.1, 2.9].map((x) => (
             <group key={x}>
               <mesh position={[x, h * 0.37, 2.5]} castShadow>
                 <cylinderGeometry args={[0.19, 0.25, h * 0.69, 12]} />
@@ -124,6 +132,23 @@ export function LandmarkShell({
             </group>
           ))}
           <Pediment y={h * 0.74} />
+          {[-1, 1].flatMap((side) =>
+            [-2.7, -0.8, 1].map((z) => (
+              <group
+                key={`${side}-${z}`}
+                position={[side * 3.42, 2.8, z]}
+                rotation={[0, (side * Math.PI) / 2, 0]}
+              >
+                <Box p={[0, 0, 0]} s={[0.78, 2, 0.09]} c="#677c79" />
+                <mesh position={[0, 1, 0.02]}>
+                  <circleGeometry args={[0.39, 20, 0, Math.PI]} />
+                  <meshStandardMaterial color="#677c79" />
+                </mesh>
+                <Box p={[0, 0, 0.07]} s={[0.065, 2.1, 0.04]} c="#f6f0de" />
+                <Box p={[0, 0.35, 0.07]} s={[0.78, 0.065, 0.04]} c="#f6f0de" />
+              </group>
+            )),
+          )}
         </>
       )}
       {kind === 1 && (

@@ -88,7 +88,7 @@ test('civic blocks preserve road clearance and never overlap across neighbourhoo
   const centre = districts.slice(0, 6);
   assert.ok(
     Math.max(...centre.map((d) => d.x)) - Math.min(...centre.map((d) => d.x)) <=
-      54,
+      68,
   );
   assert.ok(
     Math.max(...centre.map((d) => d.z)) - Math.min(...centre.map((d) => d.z)) <=

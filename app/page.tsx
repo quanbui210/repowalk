@@ -1,6 +1,8 @@
 'use client';
 import { useState, useEffect, useMemo, useRef, lazy, Suspense } from 'react';
 import Link from 'next/link';
+import { StoryProvider, StoryUI, useStory } from './lost-found';
+import { BuildingMission } from './building-missions';
 import {
   compareFiles,
   floorsFor,
@@ -117,6 +119,10 @@ const demo: RepoFile[] = paths.map((path) => {
   };
 });
 export default function Home() {
+  return <StoryProvider><Game /></StoryProvider>;
+}
+function Game() {
+  const story = useStory();
   const [files, setFiles] = useState(demo),
     [repo, setRepo] = useState('repowalk / playground'),
     [branch, setBranch] = useState('main'),
@@ -415,13 +421,13 @@ export default function Home() {
     }
   }
   return (
-    <main className="app-shell">
+    <main className={'app-shell' + (story.storyMode ? ' story-mode' : '') + (inside ? ' story-inside' : '')}>
       <header className="topbar">
         <Link className="brand" href="/">
           <span className="brand-icon">
             <Box size={22} />
           </span>
-          repowalk<span className="alpha">ALPHA</span>
+          {story.storyMode ? 'little helsinki' : 'repowalk'}<span className="alpha">{story.storyMode ? 'LOST & FOUND' : 'ALPHA'}</span>
         </Link>
         <div className="repo-chip">
           <GitFork size={16} />
@@ -541,12 +547,14 @@ export default function Home() {
                 onLeave={leave}
                 onNear={setNear}
                 reset={reset}
-                paused={modal || help || reading}
+                paused={modal || help || reading || story.dialog !== null || story.journal || story.missionOpen}
                 muted={muted}
               />
             </Suspense>
           </div>
           <div className="scene-vignette" />
+          <StoryUI inside={inside} />
+          {inside && !active && <BuildingMission key={folder} kind={Math.max(0, folders.indexOf(folder)) % 6} files={files} muted={muted} onEnter={enter} />}
           <div className="scene-heading">
             <div className="eyebrow">
               <span className="live-dot" /> EXPLORATION MODE
@@ -872,7 +880,7 @@ export default function Home() {
           <div className={'minimap ' + (map ? 'expanded' : '')}>
             <button className="minimap-heading" onClick={() => setMap(!map)}>
               <span>
-                <Map size={13} /> {inside ? 'FLOOR PLAN' : 'FOLDER BUILDINGS'}
+                <Map size={13} /> {inside ? 'FLOOR PLAN' : story.storyMode ? 'CITY MAP' : 'FOLDER BUILDINGS'}
               </span>
               <span>{map ? '−' : '+'}</span>
             </button>
@@ -1065,7 +1073,7 @@ export default function Home() {
           {files.length} rooms
         </span>
         <span>
-          Every codebase has a story. Step inside. <Box size={12} />
+          {story.storyMode ? 'Every lost thing has a story. Find yours.' : 'Every codebase has a story. Step inside.'} <Box size={12} />
         </span>
       </footer>
       <Dialog open={modal} onOpenChange={setModal}>

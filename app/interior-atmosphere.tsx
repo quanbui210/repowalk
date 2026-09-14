@@ -2,6 +2,7 @@
 import { useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
+import { useStory } from './lost-found';
 
 export const INTERIOR_THEMES = [
   {
@@ -179,11 +180,114 @@ export function InteriorAtmosphere({
   room?: boolean;
   paused?: boolean;
 }) {
+  const story = useStory();
   const theme = INTERIOR_THEMES[kind],
     edge = room ? 9 : 6.3;
   return (
     <group>
-      <CoffeeCorner paused={paused} />
+      {(kind === 2 || kind === 3) && <CoffeeCorner paused={paused} />}
+      {kind === 0 && (
+        <group>
+          <Piece
+            p={[0, 0.055, -Math.max(1, depth / 2 - 3)]}
+            s={[2.5, 0.03, Math.max(8, depth)]}
+            c="#a56c56"
+          />
+          {[0, 1, 2]
+            .filter((row) => row * 4 < depth - 4)
+            .map((row) => (
+              <group key={`nave-${row}`} position={[0, 0, -2 - row * 4]}>
+                {[-1, 1].map((side) => (
+                  <group key={side}>
+                    <Piece
+                      p={[side * 2.8, 0.5, 0]}
+                      s={[1.8, 0.18, 1.3]}
+                      c="#8b6748"
+                    />
+                    <Piece
+                      p={[side * 2.8, 0.9, -0.55]}
+                      s={[1.8, 0.8, 0.13]}
+                      c="#9e7956"
+                    />
+                    <mesh position={[side * 5.8, 2.2, 0]} castShadow>
+                      <cylinderGeometry args={[0.25, 0.36, 4.4, 16]} />
+                      <meshStandardMaterial color="#eee5ce" />
+                    </mesh>
+                    <Piece
+                      p={[side * 5.8, 4.5, 0]}
+                      s={[0.9, 0.3, 0.9]}
+                      c="#f5ead3"
+                    />
+                    <mesh
+                      position={[side * 5.8, 3.8, 0]}
+                      rotation={[0, Math.PI / 2, 0]}
+                    >
+                      <torusGeometry args={[1.1, 0.12, 8, 24, Math.PI]} />
+                      <meshStandardMaterial color="#e5d4b6" />
+                    </mesh>
+                  </group>
+                ))}
+              </group>
+            ))}
+          <group position={[0, 0, -Math.max(4, depth - 2)]}>
+            <Piece p={[0, 0.2, 0]} s={[5, 0.4, 2.8]} c="#d4c8ab" />
+            <Piece p={[0, 1.1, 0]} s={[3.5, 1.7, 1.1]} c="#795941" />
+            {Array.from({ length: 11 }, (_, i) => (
+              <mesh
+                key={i}
+                position={[
+                  (i - 5) * 0.27,
+                  2.7 + (5 - Math.abs(i - 5)) * 0.1,
+                  -0.25,
+                ]}
+                castShadow
+              >
+                <cylinderGeometry
+                  args={[0.1, 0.1, 2 + (5 - Math.abs(i - 5)) * 0.22, 12]}
+                />
+                <meshStandardMaterial
+                  color={story.bells ? '#e4c580' : '#a1aaa4'}
+                  metalness={0.65}
+                  roughness={0.3}
+                  emissive="#c79a45"
+                  emissiveIntensity={story.bells ? 0.3 : 0}
+                />
+              </mesh>
+            ))}
+            <Piece p={[0, 1.3, 0.65]} s={[2.8, 0.12, 0.45]} c="#f3e5c5" />
+            {Array.from({ length: 12 }, (_, i) => (
+              <Piece
+                key={i}
+                p={[-1.25 + i * 0.22, 1.38, 0.53]}
+                s={[0.1, 0.08, 0.25]}
+                c="#273d39"
+              />
+            ))}
+            {[-2.2, 2.2].map((x) => (
+              <group key={x} position={[x, 0, 1]}>
+                <Piece p={[0, 1, 0]} s={[0.07, 2, 0.07]} c="#b8a375" />
+                {[-0.3, 0, 0.3].map((a) => (
+                  <group key={a}>
+                    <Piece p={[a, 2, 0]} s={[0.1, 0.45, 0.1]} c="#eee3c5" />
+                    <mesh position={[a, 2.3, 0]}>
+                      <sphereGeometry args={[0.07, 8, 8]} />
+                      <meshBasicMaterial
+                        color={story.bells ? '#ffd07d' : '#9e9276'}
+                      />
+                    </mesh>
+                  </group>
+                ))}
+              </group>
+            ))}
+            <pointLight
+              position={[0, 4, 2]}
+              intensity={story.bells ? 65 : 20}
+              distance={18}
+              color="#ffe1a0"
+            />
+          </group>
+        </group>
+      )}
       {[0, 1, 2, 3].map((i) => (
         <Visitor key={i} {...{ i, depth, paused, kind }} />
       ))}

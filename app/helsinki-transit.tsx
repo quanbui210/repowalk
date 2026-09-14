@@ -219,7 +219,7 @@ function Shelter({
       <Suspense fallback={null}>
         <Badge p={[-3, 2.9, side * 2 + 0.06]} width={0.62} />
       </Suspense>
-      <group position={[side * 2, 0, 0]}>
+      <group position={[side * (tram ? 3.6 : 2), 0, 0]}>
         {[0, 1, 2, 3].map((i) => (
           <Passenger key={i} i={i} dwell={dwell} side={side} />
         ))}
@@ -230,6 +230,7 @@ function Shelter({
 function TransitVehicle({
   id,
   tram = false,
+  routeZ = 7,
   side = 1,
   time,
   traffic,
@@ -240,6 +241,7 @@ function TransitVehicle({
 }: {
   id: string;
   tram?: boolean;
+  routeZ?: number;
   side?: number;
   time: RefObject<number>;
   traffic: TrafficState;
@@ -251,13 +253,15 @@ function TransitVehicle({
   const group = useRef<THREE.Group>(null),
     doors = useRef<THREE.Group>(null),
     dwell = useRef(0);
-  const position = useRef(tram ? 17 : side > 0 ? -30 : 34),
+  const position = useRef(
+      tram ? (side > 0 ? 17 : end + 9) : side > 0 ? -30 : 34,
+    ),
     served = useRef(false);
   const axis = tram ? 'z' : 'x',
-    direction = tram ? -1 : side,
-    lane = tram ? 1.45 : 7 + side * 1.45;
+    direction = tram ? -side : side,
+    lane = tram ? side * 1.45 : routeZ + side * 1.45;
   const half = tram ? 4.7 : 3.1,
-    stop = tram ? -20 : side * 23;
+    stop = tram ? -20 : side * 28;
   useEffect(
     () => () => {
       traffic.current.delete(id);
@@ -332,7 +336,10 @@ function TransitVehicle({
   return (
     <>
       {tram ? (
-        <group position={[1.45, 0, stop]} rotation={[0, -Math.PI / 2, 0]}>
+        <group
+          position={[side * 1.45, 0, stop]}
+          rotation={[0, (-side * Math.PI) / 2, 0]}
+        >
           <Shelter x={0} z={0} side={-1} dwell={dwell} tram />
         </group>
       ) : (
@@ -340,7 +347,11 @@ function TransitVehicle({
       )}
       <group
         ref={group}
-        rotation={[0, tram ? Math.PI : (side * Math.PI) / 2, 0]}
+        rotation={[
+          0,
+          tram ? (side > 0 ? Math.PI : 0) : (side * Math.PI) / 2,
+          0,
+        ]}
       >
         <Box p={[0, 0.7, 0]} s={[1.85, 1.1, half * 2]} c={color} />
         <Box p={[0, 1.65, 0]} s={[1.8, 0.9, half * 2 - 0.2]} c="#173d4d" />
@@ -444,7 +455,7 @@ export function HelsinkiTransit(props: {
           </group>
         </group>
       ))}
-      {[0.95, 1.95].map((x) => (
+      {[-1.95, -0.95, 0.95, 1.95].map((x) => (
         <Box
           key={x}
           p={[x, 0.14, (props.end + 22) / 2]}
@@ -452,9 +463,19 @@ export function HelsinkiTransit(props: {
           c="#bbc2b5"
         />
       ))}
-      <TransitVehicle {...props} id="bus-east" />
-      <TransitVehicle {...props} id="bus-west" side={-1} />
-      <TransitVehicle {...props} id="tram" tram />
+      {props.junctions.map((z) => (
+        <group key={`route-${z}`}>
+          <TransitVehicle {...props} routeZ={z} id={`bus-east-${z}`} />
+          <TransitVehicle
+            {...props}
+            routeZ={z}
+            id={`bus-west-${z}`}
+            side={-1}
+          />
+        </group>
+      ))}
+      <TransitVehicle {...props} id="tram-south" tram />
+      <TransitVehicle {...props} id="tram-north" tram side={-1} />
     </group>
   );
 }

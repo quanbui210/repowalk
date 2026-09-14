@@ -2,9 +2,9 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Repowalk — Explore your code in 3D',
+  title: 'Little Helsinki — Lost & Found',
   description:
-    'Walk through your GitHub repository. Folders become city blocks, files become rooms, and code becomes a world to explore.',
+    'A little city full of stories. Meet your neighbors, solve mysteries, restore the cathedral bells, and explore the code behind the city.',
 };
 
 export default function RootLayout({

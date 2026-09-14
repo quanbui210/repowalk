@@ -3,6 +3,7 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { CityLife, Birch } from './city-life';
+import { StoryStations, useStory } from './lost-found';
 import { movementVector } from '@/lib/traffic';
 import { InteriorAtmosphere, INTERIOR_THEMES } from './interior-atmosphere';
 import { VisibilityGuide } from './visibility-guide';
@@ -136,7 +137,7 @@ function Building({
 }) {
   const { x, z, scale } = district;
   const h =
-    floorsFor(district) * 6 * [0.9, 0.72, 0.66, 0.64, 1.05, 0.85][i % 6] + 0.3;
+    Math.min(i % 6 === 0 ? 6.4 : 10, floorsFor(district) * 6 * [0.9, 0.72, 0.66, 0.64, 1.05, 0.85][i % 6] + 0.3);
   const accent =
     status === 'added'
       ? '#92dfb1'
@@ -969,9 +970,9 @@ function Hallway({
         s={[3.2, 0.025, 9 - end]}
         c="#596762"
       />
-      <Block p={[-7, 1.7, (end + 9) / 2]} s={[0.3, 3.4, 9 - end]} c="#34464c" />
-      <Block p={[7, 1.7, (end + 1) / 2]} s={[0.3, 3.4, 1 - end]} c="#34464c" />
-      <Block p={[0, 2, end]} s={[14, 4, 0.3]} c="#34464c" />
+      <Block p={[-7, 1.7, (end + 9) / 2]} s={[0.3, 3.4, 9 - end]} c={INTERIOR_THEMES[kind].wall} />
+      <Block p={[7, 1.7, (end + 1) / 2]} s={[0.3, 3.4, 1 - end]} c={INTERIOR_THEMES[kind].wall} />
+      <Block p={[0, 2, end]} s={[14, 4, 0.3]} c={INTERIOR_THEMES[kind].wall} />
       <Label
         text={folder + ' / ' + INTERIOR_THEMES[kind].name}
         p={[0, 3.5, end + 0.2]}
@@ -1073,6 +1074,7 @@ type Interaction =
   | { kind: 'exit'; path: string }
   | { kind: 'symbol'; path: string; symbol: CodeConstruct };
 function Scene(props: Props) {
+  const story = useStory();
   const {
     files,
     layoutFiles,
@@ -1157,7 +1159,7 @@ function Scene(props: Props) {
         paused
       )
         return;
-      const k = e.key.toLowerCase();
+      const k = typeof e.key === 'string' ? e.key.toLowerCase() : '';
       if (
         [
           'w',
@@ -1185,7 +1187,9 @@ function Scene(props: Props) {
       }
       if (k === 'escape' && (activePath || inside)) onLeave();
     };
-    const up = (e: KeyboardEvent) => keys.current.delete(e.key.toLowerCase());
+    const up = (e: KeyboardEvent) => {
+      if (typeof e.key === 'string') keys.current.delete(e.key.toLowerCase());
+    };
     const blur = () => keys.current.clear();
     window.addEventListener('keydown', down);
     window.addEventListener('keyup', up);
@@ -1303,6 +1307,15 @@ function Scene(props: Props) {
         elevatorTarget.current = null;
       }
     }
+    let autoWalking = false;
+    if (dx || dz || inside || activePath || !story.storyMode) story.walkTo(null);
+    if (!paused && story.walkTarget.current) {
+      const [tx, tz] = story.walkTarget.current;
+      dx = tx - p.position.x;
+      dz = tz - p.position.z;
+      if (Math.hypot(dx, dz) < .18) { story.walkTo(null); dx = 0; dz = 0; }
+      else autoWalking = true;
+    }
     moving.current = !!(dx || dz);
     if (moving.current) {
       // Use the rendered camera bearing, not its still-interpolating orbit target.
@@ -1310,7 +1323,7 @@ function Scene(props: Props) {
         camera.position.x - target.current.x,
         camera.position.z - target.current.z,
       );
-      const direction = movementVector(dx, dz, yaw);
+      const direction = movementVector(dx, dz, autoWalking ? 0 : yaw);
       const speed = (keys.current.has('shift') ? 8 : 4.4) * dt,
         mx = direction.x * speed,
         mz = direction.z * speed;
@@ -1558,7 +1571,7 @@ function Scene(props: Props) {
           />
           {crossStreets(districts.length).map((z) => (
             <group key={`intersection-${z}`}>
-              <Block p={[0, 0.05, z]} s={[76, 0.12, 5.1]} c="#35444a" />
+              <Block p={[0, 0.05, z]} s={[88, 0.12, 5.1]} c="#35444a" />
               {Array.from({ length: 25 }, (_, i) => -36 + i * 3)
                 .filter((x) => Math.abs(x) > 4)
                 .map((x) => (
@@ -1760,6 +1773,7 @@ function Scene(props: Props) {
         <Player moving={moving} />
       </group>
       <VisibilityGuide player={player} enabled={!inside && !active} />
+      <StoryStations player={player} visible={!inside && !active} paused={paused} />
     </>
   );
 }

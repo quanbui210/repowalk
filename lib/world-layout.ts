@@ -1,10 +1,10 @@
 export type FileEntry = { path: string };
-export const BLOCK_SPACING = 54;
+export const BLOCK_SPACING = 44;
 export const CROSS_STREET_Z = 7;
 export const ROAD_HALF_WIDTH = 2.55;
 export const crossStreets = (count: number) =>
   Array.from(
-    { length: Math.ceil(count / 6) },
+    { length: Math.ceil(count / 12) },
     (_, i) => CROSS_STREET_Z - i * BLOCK_SPACING,
   );
 export function sidewalkSegments(end: number, junctions: number[]) {
@@ -55,24 +55,30 @@ export function buildDistricts(files: FileEntry[]): District[] {
     }
   }
   // Bounded footprints keep even very large repositories walkable.
-  const cell = 15;
+  // Twelve addresses share one walkable block instead of stretching six along a corridor.
   const addresses = [
-    [-0.8, -0.8],
-    [0.8, -0.8],
-    [1.8, -0.8],
-    [-1.8, -0.8],
-    [-0.8, -2.3],
-    [0.8, -2.3],
+    [-10, -10],
+    [10, -10],
+    [22, -10],
+    [-22, -10],
+    [-10, -24],
+    [10, -24],
+    [34, -10],
+    [-34, -10],
+    [22, -24],
+    [-22, -24],
+    [34, -24],
+    [-34, -24],
   ];
   return entries.map(([path, counts], i) => {
-    const scale = 0.95 + 0.5 * (1 - Math.exp(-counts.count / 45));
+    const scale = 0.95 + 0.35 * (1 - Math.exp(-counts.count / 45));
     const address = addresses[i % addresses.length];
     return {
       path,
       ...counts,
       children: childrenByParent.get(path) || [],
-      x: address[0] * cell,
-      z: address[1] * cell - Math.floor(i / addresses.length) * BLOCK_SPACING,
+      x: address[0],
+      z: address[1] - Math.floor(i / addresses.length) * BLOCK_SPACING,
       scale,
       height: 4.3 + Math.log2(1 + counts.count) * 1.25,
     };
